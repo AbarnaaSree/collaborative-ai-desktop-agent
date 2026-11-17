@@ -1,10 +1,11 @@
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import User
-from app.schemas.user import UserRegistrationRequest
-from app.core.security import hash_password
+from app.schemas.user import UserRegistrationRequest, UserLoginRequest
+from app.core.security import hash_password, verify_password
 
 
 def register_user(
@@ -39,5 +40,31 @@ def register_user(
     except IntegrityError:
         db.rollback()
         raise ValueError("Email is already registered")
+
+    return user
+
+
+def authenticate_user(
+    db: Session,
+    login_data: UserLoginRequest,
+) -> User | None:
+    """Authenticate a user using email and password."""
+
+    email = str(login_data.email).lower()
+
+    # Find the user by email
+    user = db.scalar(
+        select(User).where(User.email == email)
+    )
+
+    # Reject invalid credentials or inactive accounts
+    if not user or not user.is_active:
+        return None
+
+    if not verify_password(
+        login_data.password,
+        user.hashed_password,
+    ):
+        return None
 
     return user

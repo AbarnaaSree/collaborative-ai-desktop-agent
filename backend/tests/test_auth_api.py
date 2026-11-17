@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.core.database import Base, get_db
 from app.models import User
+from app.core.security import decode_access_token
 
 
 @pytest.fixture
@@ -98,3 +99,108 @@ def test_invalid_email_api(client):
     )
 
     assert response.status_code == 422
+
+
+def test_user_login_api(client):
+    # Register a user first
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "loginapi@example.com",
+            "full_name": "Login API User",
+            "password": "TestPassword123!",
+        },
+    )
+
+    # Login using the registered credentials
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "loginapi@example.com",
+            "password": "TestPassword123!",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["token_type"] == "bearer"
+    assert data["access_token"]
+
+    # Verify that the returned JWT is valid
+    subject = decode_access_token(data["access_token"])
+
+    assert subject is not None
+
+
+def test_login_with_wrong_password_api(client):
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "wrongpassapi@example.com",
+            "full_name": "Test User",
+            "password": "TestPassword123!",
+        },
+    )
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "wrongpassapi@example.com",
+            "password": "WrongPassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password"
+
+
+def test_login_with_unregistered_email_api(client):
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "unknownapi@example.com",
+            "password": "TestPassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password"
+
+
+def test_login_with_inactive_user_api(client):
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "inactiveapi@example.com",
+            "full_name": "Inactive User",
+            "password": "TestPassword123!",
+        },
+    )
+
+    # Access the test database and deactivate the user
+    db_generator = app.dependency_overrides[get_db]()
+    db = next(db_generator)
+
+    try:
+        user = db.query(User).filter_by(
+            email="inactiveapi@example.com"
+        ).first()
+
+        user.is_active = False
+        db.commit()
+
+    finally:
+        db_generator.close()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "inactiveapi@example.com",
+            "password": "TestPassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid email or password"
