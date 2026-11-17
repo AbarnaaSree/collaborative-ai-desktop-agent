@@ -10,3 +10,7 @@ psutil
 openai
 pytest
 pytest-asyncio
+email-validator
+pwdlib[argon2]
+PyJWT
+email-validator
