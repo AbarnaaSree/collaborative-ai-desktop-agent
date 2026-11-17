@@ -1,5 +1,6 @@
 
 from app.models.user import User
 from app.models.team import Team, TeamMember
+from app.models.agent import Agent
 
-__all__ = ["User", "Team", "TeamMember"]
+__all__ = ["User", "Team", "TeamMember", "Agent"]
