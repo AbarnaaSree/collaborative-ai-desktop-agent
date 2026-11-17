@@ -14,7 +14,8 @@ from app.services.user_service import (
     register_user,
     authenticate_user,
 )
-
+from app.core.dependencies import get_current_user
+from app.models import User
 
 router = APIRouter(
     prefix="/auth",
@@ -70,3 +71,13 @@ def login(
         access_token=access_token,
         token_type="bearer",
     )
+@router.get(
+    "/me",
+    response_model=UserResponse,
+)
+def get_me(
+    current_user: User = Depends(get_current_user),
+):
+    """Return the currently authenticated user's details."""
+
+    return current_user

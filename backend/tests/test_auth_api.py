@@ -9,7 +9,7 @@ from app.main import app
 from app.core.database import Base, get_db
 from app.models import User
 from app.core.security import decode_access_token
-
+from app.core.security import create_access_token
 
 @pytest.fixture
 def client():
@@ -204,3 +204,60 @@ def test_login_with_inactive_user_api(client):
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid email or password"
+
+
+def test_get_current_user_api(client):
+    # Register a user
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "currentuser@example.com",
+            "full_name": "Current User",
+            "password": "TestPassword123!",
+        },
+    )
+
+    # Log in to obtain an access token
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "currentuser@example.com",
+            "password": "TestPassword123!",
+        },
+    )
+
+    token = login_response.json()["access_token"]
+
+    # Access the protected endpoint
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["email"] == "currentuser@example.com"
+    assert data["full_name"] == "Current User"
+    assert data["is_active"] is True
+    assert "hashed_password" not in data
+
+
+def test_get_current_user_without_token_api(client):
+    response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 401
+
+
+def test_get_current_user_with_invalid_token_api(client):
+    response = client.get(
+        "/api/v1/auth/me",
+        headers={
+            "Authorization": "Bearer invalid-token"
+        },
+    )
+
+    assert response.status_code == 401
