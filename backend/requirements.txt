@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+sqlalchemy
+alembic
+httpx
+python-dotenv
+psutil
+openai
+pytest
+pytest-asyncio
