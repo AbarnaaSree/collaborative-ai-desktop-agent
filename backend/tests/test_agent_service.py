@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
+from app.core.security import verify_agent_token
 from app.models import User, Team, TeamMember, Agent
 from app.schemas.agent import AgentRegistrationRequest
 from app.services.agent_service import register_agent
@@ -69,7 +70,7 @@ def test_register_personal_agent(db_session):
         agent_version="1.0.0",
     )
 
-    agent = register_agent(
+    agent, agent_token = register_agent(
         db_session,
         agent_data,
         registered_by=user.id,
@@ -81,6 +82,15 @@ def test_register_personal_agent(db_session):
     assert agent.team_id is None
     assert agent.registered_by == user.id
     assert agent.status == "offline"
+
+    # Verify the generated agent authentication token
+    assert agent_token
+    assert agent.agent_token_hash is not None
+    assert agent_token != agent.agent_token_hash
+    assert verify_agent_token(
+        agent_token,
+        agent.agent_token_hash,
+    )
 
 
 def test_register_agent_with_team(db_session):
@@ -118,7 +128,7 @@ def test_register_agent_with_team(db_session):
         team_id=team.id,
     )
 
-    agent = register_agent(
+    agent, agent_token = register_agent(
         db_session,
         agent_data,
         registered_by=user.id,
@@ -127,6 +137,12 @@ def test_register_agent_with_team(db_session):
     assert agent.id is not None
     assert agent.team_id == team.id
     assert agent.registered_by == user.id
+
+    assert agent_token
+    assert verify_agent_token(
+        agent_token,
+        agent.agent_token_hash,
+    )
 
 
 def test_reject_agent_registration_for_non_member(db_session):

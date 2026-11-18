@@ -7,6 +7,7 @@ from app.core.dependencies import get_current_user
 from app.models import User
 from app.schemas.agent import (
     AgentRegistrationRequest,
+    AgentRegistrationResponse,
     AgentResponse,
 )
 from app.services.agent_service import register_agent
@@ -20,7 +21,7 @@ router = APIRouter(
 
 @router.post(
     "/register",
-    response_model=AgentResponse,
+    response_model=AgentRegistrationResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def register(
@@ -28,13 +29,18 @@ def register(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Register a desktop agent for the authenticated user."""
+    """Register a desktop agent and return its one-time token."""
 
     try:
-        return register_agent(
+        agent, agent_token = register_agent(
             db=db,
             agent_data=agent_data,
             registered_by=current_user.id,
+        )
+
+        return AgentRegistrationResponse(
+            **AgentResponse.model_validate(agent).model_dump(),
+            agent_token=agent_token,
         )
 
     except ValueError as error:

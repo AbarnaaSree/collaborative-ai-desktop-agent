@@ -1,3 +1,5 @@
+
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -6,7 +8,7 @@ from pwdlib import PasswordHash
 from app.core.config import settings
 
 
-# Password hashing configuration
+# Password and token hashing configuration
 password_hash = PasswordHash.recommended()
 
 
@@ -23,6 +25,27 @@ def verify_password(
     """Verify a password against its stored hash."""
 
     return password_hash.verify(plain_password, hashed_password)
+
+
+def generate_agent_token() -> str:
+    """Generate a cryptographically secure agent authentication token."""
+
+    return secrets.token_urlsafe(48)
+
+
+def hash_agent_token(token: str) -> str:
+    """Securely hash an agent authentication token."""
+
+    return password_hash.hash(token)
+
+
+def verify_agent_token(
+    plain_token: str,
+    hashed_token: str,
+) -> bool:
+    """Verify an agent token against its stored hash."""
+
+    return password_hash.verify(plain_token, hashed_token)
 
 
 def create_access_token(

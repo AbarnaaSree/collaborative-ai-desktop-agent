@@ -1,3 +1,4 @@
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,3 +29,9 @@ class AgentResponse(BaseModel):
     team_id: int | None
     last_heartbeat: datetime | None
     created_at: datetime
+
+
+class AgentRegistrationResponse(AgentResponse):
+    """Response schema containing the one-time agent authentication token."""
+
+    agent_token: str

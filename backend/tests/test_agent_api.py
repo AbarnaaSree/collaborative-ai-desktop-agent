@@ -127,7 +127,7 @@ def test_register_personal_agent_api(client):
             "agent_version": "1.0.0",
         },
     )
-
+    print("Registration response:", response.status_code, response.json())
     assert response.status_code == 201
 
     data = response.json()
