@@ -91,6 +91,7 @@ def test_connect_agent_successfully(db_session):
     assert connection.disconnected_at is None
 
     assert agent.status == "online"
+    assert agent.last_heartbeat is not None
 
 
 def test_disconnect_agent_successfully(db_session):

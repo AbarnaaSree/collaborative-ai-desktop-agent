@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: SecretStr = SecretStr("")
     OPENROUTER_MODEL: str = "openrouter/free"
 
+    AGENT_HEARTBEAT_INTERVAL_SECONDS: int = 30
+    AGENT_HEARTBEAT_TIMEOUT_SECONDS: int = 90
+
     JWT_SECRET_KEY: SecretStr
 
     model_config = SettingsConfigDict(

@@ -21,6 +21,7 @@ def connect_agent(
     )
 
     agent.status = "online"
+    agent.last_heartbeat = datetime.now(timezone.utc)
 
     db.add(connection)
     db.commit()

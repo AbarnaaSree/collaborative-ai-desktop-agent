@@ -1,5 +1,5 @@
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from app.core.security import (
 )
 from app.models import Agent, TeamMember
 from app.schemas.agent import AgentRegistrationRequest
+from app.core.config import settings
 
 
 def register_agent(
@@ -68,3 +69,26 @@ def record_agent_heartbeat(
     db.refresh(agent)
 
     return agent
+
+
+def mark_stale_agents_offline(db: Session) -> int:
+    """Mark agents offline when their heartbeat has timed out."""
+
+    cutoff_time = datetime.now(timezone.utc) - timedelta(
+        seconds=settings.AGENT_HEARTBEAT_TIMEOUT_SECONDS
+    )
+
+    stale_agents = db.scalars(
+        select(Agent).where(
+            Agent.status == "online",
+            Agent.last_heartbeat.is_not(None),
+            Agent.last_heartbeat < cutoff_time,
+        )
+    ).all()
+
+    for agent in stale_agents:
+        agent.status = "offline"
+
+    db.commit()
+
+    return len(stale_agents)
