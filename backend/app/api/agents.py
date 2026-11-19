@@ -35,6 +35,11 @@ from app.services.agent_metric_service import (
     create_agent_metric,
     get_agent_metrics,
 )
+from app.services.agent_service import (
+    record_agent_heartbeat,
+    register_agent,
+    rotate_agent_token,
+)
 
 router = APIRouter(
     prefix="/agents",
@@ -71,6 +76,38 @@ def register(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(error),
         ) from error
+
+
+@router.post(
+    "/{agent_id}/rotate-token",
+    status_code=status.HTTP_200_OK,
+)
+def rotate_token(
+    agent_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rotate an agent token owned by the authenticated user."""
+
+    result = rotate_agent_token(
+        db=db,
+        agent_id=agent_id,
+        registered_by=current_user.id,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found",
+        )
+
+    agent, new_token = result
+
+    return {
+        "agent_id": agent.id,
+        "agent_uid": agent.agent_uid,
+        "agent_token": new_token,
+    }
 
 
 @router.post(

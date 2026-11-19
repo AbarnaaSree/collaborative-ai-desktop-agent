@@ -56,6 +56,32 @@ def register_agent(
     return agent, agent_token
 
 
+def rotate_agent_token(
+    db: Session,
+    agent_id: int,
+    registered_by: int,
+) -> tuple[Agent, str] | None:
+    """Rotate an agent token for its registering user."""
+
+    agent = db.scalar(
+        select(Agent).where(
+            Agent.id == agent_id,
+            Agent.registered_by == registered_by,
+        )
+    )
+
+    if agent is None:
+        return None
+
+    new_token = generate_agent_token()
+    agent.agent_token_hash = hash_agent_token(new_token)
+
+    db.commit()
+    db.refresh(agent)
+
+    return agent, new_token
+
+
 def record_agent_heartbeat(
     db: Session,
     agent: Agent,

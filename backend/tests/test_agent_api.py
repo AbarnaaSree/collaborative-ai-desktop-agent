@@ -642,3 +642,159 @@ def test_get_agent_metrics_rejects_invalid_limit(client):
     )
 
     assert response.status_code == 422
+
+
+def test_rotate_agent_token_success_api(client):
+    """Test successful agent token rotation."""
+
+    user_token, _ = register_and_login(
+        client,
+        "rotateagent@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Rotation Test Agent",
+            "hostname": "ROTATION-PC",
+            "operating_system": "Windows",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    agent_id = registration.json()["id"]
+
+    response = client.post(
+        f"/api/v1/agents/{agent_id}/rotate-token",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["agent_id"] == agent_id
+    assert data["agent_uid"] == registration.json()["agent_uid"]
+    assert data["agent_token"]
+    assert data["agent_token"] != registration.json()["agent_token"]
+
+
+def test_old_agent_token_rejected_after_rotation(client):
+    """Ensure the old token stops working after rotation."""
+
+    user_token, _ = register_and_login(
+        client,
+        "oldtoken@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Old Token Test Agent",
+            "hostname": "OLD-TOKEN-PC",
+            "operating_system": "Windows",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    old_token = registration.json()["agent_token"]
+    agent_id = registration.json()["id"]
+
+    rotation = client.post(
+        f"/api/v1/agents/{agent_id}/rotate-token",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert rotation.status_code == 200
+
+    old_token_response = client.post(
+        "/api/v1/agents/heartbeat",
+        headers={"Authorization": f"Bearer {old_token}"},
+    )
+
+    assert old_token_response.status_code == 401
+
+
+def test_new_agent_token_works_after_rotation(client):
+    """Ensure the replacement token authenticates the agent."""
+
+    user_token, _ = register_and_login(
+        client,
+        "newtoken@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "New Token Test Agent",
+            "hostname": "NEW-TOKEN-PC",
+            "operating_system": "Windows",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    agent_id = registration.json()["id"]
+
+    rotation = client.post(
+        f"/api/v1/agents/{agent_id}/rotate-token",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    new_token = rotation.json()["agent_token"]
+
+    response = client.post(
+        "/api/v1/agents/heartbeat",
+        headers={"Authorization": f"Bearer {new_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "online"
+
+
+def test_user_cannot_rotate_another_users_agent_token(client):
+    """Prevent users from rotating agents they do not own."""
+
+    owner_token, _ = register_and_login(
+        client,
+        "agentowner@example.com",
+    )
+
+    outsider_token, _ = register_and_login(
+        client,
+        "agentoutsider@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Owner Agent",
+            "hostname": "OWNER-PC",
+            "operating_system": "Windows",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    agent_id = registration.json()["id"]
+
+    response = client.post(
+        f"/api/v1/agents/{agent_id}/rotate-token",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_rotate_agent_token_requires_authentication(client):
+    """Reject token rotation without user authentication."""
+
+    response = client.post(
+        "/api/v1/agents/1/rotate-token",
+    )
+
+    assert response.status_code == 401
