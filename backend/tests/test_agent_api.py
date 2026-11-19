@@ -308,3 +308,167 @@ def test_agent_heartbeat_with_invalid_token_api(client):
     )
 
     assert response.status_code == 401
+
+
+def test_agent_connect_api(client):
+    """Test creating a connection for an authenticated agent."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "connect@example.com",
+    )
+
+    response = client.post(
+        "/api/v1/agents/connect",
+        headers={
+            "Authorization": f"Bearer {agent_token}"
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["connection_uid"] is not None
+    assert data["agent_id"] is not None
+    assert data["status"] == "connected"
+    assert data["connected_at"] is not None
+
+
+def test_agent_disconnect_api(client):
+    """Test disconnecting an agent's own connection."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "disconnect@example.com",
+    )
+
+    headers = {
+        "Authorization": f"Bearer {agent_token}"
+    }
+
+    connect_response = client.post(
+        "/api/v1/agents/connect",
+        headers=headers,
+    )
+
+    assert connect_response.status_code == 201
+
+    connection_uid = connect_response.json()["connection_uid"]
+
+    disconnect_response = client.post(
+        "/api/v1/agents/disconnect",
+        headers=headers,
+        json={
+            "connection_uid": connection_uid,
+            "reason": "Testing disconnection",
+        },
+    )
+
+    assert disconnect_response.status_code == 200
+
+    data = disconnect_response.json()
+
+    assert data["connection_uid"] == connection_uid
+    assert data["status"] == "disconnected"
+    assert data["disconnected_at"] is not None
+    assert data["disconnect_reason"] == "Testing disconnection"
+
+
+def test_agent_connection_history_api(client):
+    """Test retrieving connection history for an agent."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "history@example.com",
+    )
+
+    headers = {
+        "Authorization": f"Bearer {agent_token}"
+    }
+
+    client.post(
+        "/api/v1/agents/connect",
+        headers=headers,
+    )
+
+    client.post(
+        "/api/v1/agents/connect",
+        headers=headers,
+    )
+
+    response = client.get(
+        "/api/v1/agents/connections",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    connections = response.json()
+
+    assert len(connections) == 2
+    assert all(
+        connection["status"] == "connected"
+        for connection in connections
+    )
+
+
+def test_agent_cannot_disconnect_another_agents_connection(client):
+    """Prevent an agent from disconnecting another agent's session."""
+
+    first_token = register_agent_and_get_token(
+        client,
+        "firstagent@example.com",
+    )
+
+    second_token = register_agent_and_get_token(
+        client,
+        "secondagent@example.com",
+    )
+
+    first_connection = client.post(
+        "/api/v1/agents/connect",
+        headers={
+            "Authorization": f"Bearer {first_token}"
+        },
+    )
+
+    assert first_connection.status_code == 201
+
+    connection_uid = first_connection.json()["connection_uid"]
+
+    response = client.post(
+        "/api/v1/agents/disconnect",
+        headers={
+            "Authorization": f"Bearer {second_token}"
+        },
+        json={
+            "connection_uid": connection_uid,
+            "reason": "Unauthorized attempt",
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_agent_connection_endpoints_require_authentication(client):
+    """Reject connection requests without agent authentication."""
+
+    connect_response = client.post(
+        "/api/v1/agents/connect",
+    )
+
+    disconnect_response = client.post(
+        "/api/v1/agents/disconnect",
+        json={
+            "connection_uid": "00000000-0000-0000-0000-000000000001",
+        },
+    )
+
+    history_response = client.get(
+        "/api/v1/agents/connections",
+    )
+
+    assert connect_response.status_code == 401
+    assert disconnect_response.status_code == 401
+    assert history_response.status_code == 401

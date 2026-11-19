@@ -43,3 +43,36 @@ class AgentHeartbeatResponse(BaseModel):
     agent_uid: str
     status: str
     last_heartbeat: datetime
+
+
+class AgentConnectResponse(BaseModel):
+    """Response schema containing a new agent connection session."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    connection_uid: str
+    agent_id: int
+    client_ip: str | None
+    status: str
+    connected_at: datetime
+
+
+class AgentDisconnectRequest(BaseModel):
+    """Request schema for disconnecting an agent connection."""
+
+    connection_uid: str = Field(min_length=36, max_length=36)
+    reason: str | None = Field(default=None, max_length=255)
+
+
+class AgentConnectionResponse(BaseModel):
+    """Response schema containing agent connection history."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    connection_uid: str
+    agent_id: int
+    client_ip: str | None
+    status: str
+    connected_at: datetime
+    disconnected_at: datetime | None
+    disconnect_reason: str | None

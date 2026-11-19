@@ -80,3 +80,18 @@ def get_agent_connections(
             .order_by(AgentConnection.connected_at.desc())
         ).all()
     )
+
+
+def get_agent_connection_by_uid(
+    db: Session,
+    agent_id: int,
+    connection_uid: str,
+) -> AgentConnection | None:
+    """Retrieve a connection only if it belongs to the specified agent."""
+
+    return db.scalar(
+        select(AgentConnection).where(
+            AgentConnection.agent_id == agent_id,
+            AgentConnection.connection_uid == connection_uid,
+        )
+    )
