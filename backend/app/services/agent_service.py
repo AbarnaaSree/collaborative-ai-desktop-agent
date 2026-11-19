@@ -1,4 +1,6 @@
 
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,3 +53,18 @@ def register_agent(
 
     # Return the agent and original token for one-time delivery
     return agent, agent_token
+
+
+def record_agent_heartbeat(
+    db: Session,
+    agent: Agent,
+) -> Agent:
+    """Update the heartbeat timestamp and mark the agent online."""
+
+    agent.last_heartbeat = datetime.now(timezone.utc)
+    agent.status = "online"
+
+    db.commit()
+    db.refresh(agent)
+
+    return agent

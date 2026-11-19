@@ -35,3 +35,11 @@ class AgentRegistrationResponse(AgentResponse):
     """Response schema containing the one-time agent authentication token."""
 
     agent_token: str
+
+
+class AgentHeartbeatResponse(BaseModel):
+    """Response schema containing the latest agent heartbeat details."""
+
+    agent_uid: str
+    status: str
+    last_heartbeat: datetime

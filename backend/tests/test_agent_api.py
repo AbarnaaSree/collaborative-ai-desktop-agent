@@ -73,6 +73,27 @@ def register_and_login(client, email):
     return login.json()["access_token"], registration.json()["id"]
 
 
+def register_agent_and_get_token(client, email):
+    """Register a desktop agent and obtain its authentication token."""
+
+    user_token, _ = register_and_login(client, email)
+
+    response = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Heartbeat Test Agent",
+            "hostname": "TEST-PC-001",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert response.status_code == 201
+
+    return response.json()["agent_token"]
+
+
 def create_team_membership(
     creator_id,
     member_id,
@@ -236,6 +257,53 @@ def test_register_agent_with_invalid_token_api(client):
             "hostname": "UNKNOWN-PC",
             "operating_system": "Windows 11",
             "agent_version": "1.0.0",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_agent_heartbeat_success_api(client):
+    """Test heartbeat from an authenticated desktop agent."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "heartbeat@example.com",
+    )
+
+    response = client.post(
+        "/api/v1/agents/heartbeat",
+        headers={
+            "Authorization": f"Bearer {agent_token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["agent_uid"] is not None
+    assert data["status"] == "online"
+    assert data["last_heartbeat"] is not None
+
+
+def test_agent_heartbeat_without_token_api(client):
+    """Reject heartbeat requests without authentication."""
+
+    response = client.post(
+        "/api/v1/agents/heartbeat",
+    )
+
+    assert response.status_code == 401
+
+
+def test_agent_heartbeat_with_invalid_token_api(client):
+    """Reject heartbeat requests with an invalid agent token."""
+
+    response = client.post(
+        "/api/v1/agents/heartbeat",
+        headers={
+            "Authorization": "Bearer invalid-agent-token"
         },
     )
 

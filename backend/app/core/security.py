@@ -1,4 +1,6 @@
 
+import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -34,18 +36,20 @@ def generate_agent_token() -> str:
 
 
 def hash_agent_token(token: str) -> str:
-    """Securely hash an agent authentication token."""
+    """Generate a SHA-256 fingerprint of an agent token."""
 
-    return password_hash.hash(token)
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def verify_agent_token(
     plain_token: str,
     hashed_token: str,
 ) -> bool:
-    """Verify an agent token against its stored hash."""
+    """Verify an agent token against its stored fingerprint."""
 
-    return password_hash.verify(plain_token, hashed_token)
+    expected_hash = hash_agent_token(plain_token)
+
+    return hmac.compare_digest(expected_hash, hashed_token)
 
 
 def create_access_token(

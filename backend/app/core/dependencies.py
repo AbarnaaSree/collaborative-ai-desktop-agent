@@ -1,11 +1,12 @@
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import decode_access_token
-from app.models import User
+from app.core.security import decode_access_token, hash_agent_token
+from app.models import Agent, User
 
 
 # Extract Bearer tokens from the Authorization header
@@ -49,3 +50,37 @@ def get_current_user(
         raise unauthorized_error
 
     return user
+
+
+def get_current_agent(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        bearer_scheme
+    ),
+    db: Session = Depends(get_db),
+) -> Agent:
+    """Identify and return the currently authenticated desktop agent."""
+
+    unauthorized_error = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate agent credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    # Check whether the request contains a Bearer token
+    if credentials is None:
+        raise unauthorized_error
+
+    # Generate the token fingerprint for database lookup
+    token_hash = hash_agent_token(credentials.credentials)
+
+    # Find the agent associated with this token
+    agent = db.scalar(
+        select(Agent).where(
+            Agent.agent_token_hash == token_hash
+        )
+    )
+
+    if agent is None:
+        raise unauthorized_error
+
+    return agent
