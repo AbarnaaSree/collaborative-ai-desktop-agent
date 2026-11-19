@@ -27,7 +27,14 @@ from app.services.agent_service import (
     record_agent_heartbeat,
     register_agent,
 )
-
+from app.schemas.agent_metric import (
+    AgentMetricCreate,
+    AgentMetricResponse,
+)
+from app.services.agent_metric_service import (
+    create_agent_metric,
+    get_agent_metrics,
+)
 
 router = APIRouter(
     prefix="/agents",
@@ -168,4 +175,48 @@ def connection_history(
     return get_agent_connections(
         db=db,
         agent_id=current_agent.id,
+    )
+
+
+@router.post(
+    "/metrics",
+    response_model=AgentMetricResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_metrics(
+    metric_data: AgentMetricCreate,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Store resource metrics from an authenticated desktop agent."""
+
+    return create_agent_metric(
+        db=db,
+        agent_id=current_agent.id,
+        metric_data=metric_data,
+    )
+
+
+@router.get(
+    "/metrics",
+    response_model=list[AgentMetricResponse],
+    status_code=status.HTTP_200_OK,
+)
+def metric_history(
+    limit: int = 100,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Retrieve resource metric history for the authenticated agent."""
+
+    if not 1 <= limit <= 1000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Limit must be between 1 and 1000",
+        )
+
+    return get_agent_metrics(
+        db=db,
+        agent_id=current_agent.id,
+        limit=limit,
     )

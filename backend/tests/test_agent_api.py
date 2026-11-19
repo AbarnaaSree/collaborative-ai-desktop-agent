@@ -472,3 +472,173 @@ def test_agent_connection_endpoints_require_authentication(client):
     assert connect_response.status_code == 401
     assert disconnect_response.status_code == 401
     assert history_response.status_code == 401
+
+
+def sample_metric_payload():
+    """Return valid desktop resource metrics for API tests."""
+
+    return {
+        "cpu_usage": 45.5,
+        "memory_usage": 65.0,
+        "memory_total": 16_000_000_000,
+        "memory_available": 5_600_000_000,
+        "disk_usage": 70.0,
+        "disk_total": 512_000_000_000,
+        "disk_free": 153_600_000_000,
+        "uptime_seconds": 86400,
+    }
+
+
+def test_submit_agent_metrics_api(client):
+    """Test submitting resource metrics from an authenticated agent."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "metrics@example.com",
+    )
+
+    response = client.post(
+        "/api/v1/agents/metrics",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=sample_metric_payload(),
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["agent_id"] is not None
+    assert data["cpu_usage"] == 45.5
+    assert data["memory_usage"] == 65.0
+    assert data["disk_usage"] == 70.0
+    assert data["uptime_seconds"] == 86400
+    assert data["recorded_at"] is not None
+
+
+def test_get_agent_metrics_api(client):
+    """Test retrieving resource metric history."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "metricshistory@example.com",
+    )
+
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    first_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=sample_metric_payload(),
+    )
+
+    second_payload = sample_metric_payload()
+    second_payload["cpu_usage"] = 75.0
+
+    second_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=second_payload,
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/metrics",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert len(metrics) == 2
+    assert all(
+        metric["agent_id"] == first_response.json()["agent_id"]
+        for metric in metrics
+    )
+
+
+def test_agent_cannot_access_another_agents_metrics(client):
+    """Ensure agents can retrieve only their own metrics."""
+
+    first_token = register_agent_and_get_token(
+        client,
+        "firstmetrics@example.com",
+    )
+
+    second_token = register_agent_and_get_token(
+        client,
+        "secondmetrics@example.com",
+    )
+
+    first_response = client.post(
+        "/api/v1/agents/metrics",
+        headers={"Authorization": f"Bearer {first_token}"},
+        json=sample_metric_payload(),
+    )
+
+    assert first_response.status_code == 201
+
+    second_response = client.get(
+        "/api/v1/agents/metrics",
+        headers={"Authorization": f"Bearer {second_token}"},
+    )
+
+    assert second_response.status_code == 200
+    assert second_response.json() == []
+
+
+def test_submit_agent_metrics_without_authentication(client):
+    """Reject metric submissions without agent authentication."""
+
+    response = client.post(
+        "/api/v1/agents/metrics",
+        json=sample_metric_payload(),
+    )
+
+    assert response.status_code == 401
+
+
+def test_get_agent_metrics_without_authentication(client):
+    """Reject metric history requests without authentication."""
+
+    response = client.get("/api/v1/agents/metrics")
+
+    assert response.status_code == 401
+
+
+def test_submit_invalid_agent_metrics_api(client):
+    """Reject resource metrics containing invalid values."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "invalidmetrics@example.com",
+    )
+
+    payload = sample_metric_payload()
+    payload["cpu_usage"] = 150.0
+
+    response = client.post(
+        "/api/v1/agents/metrics",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_get_agent_metrics_rejects_invalid_limit(client):
+    """Reject metric history requests with an invalid limit."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "invalidlimit@example.com",
+    )
+
+    response = client.get(
+        "/api/v1/agents/metrics?limit=0",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert response.status_code == 422
