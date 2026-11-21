@@ -95,3 +95,18 @@ def test_collect_process_snapshot_returns_list():
             "create_time",
         }
         assert expected_keys.issubset(result[0].keys())
+
+def test_collect_process_snapshot_skips_pid_zero(monkeypatch):
+    system_idle_process = FakeProcess(pid=0, name="System Idle Process")
+    valid_process = FakeProcess(pid=1234, name="example")
+
+    monkeypatch.setattr(
+        psutil,
+        "process_iter",
+        lambda *args: [system_idle_process, valid_process],
+    )
+
+    result = collect_process_snapshot()
+
+    assert len(result) == 1
+    assert result[0]["pid"] == 1234

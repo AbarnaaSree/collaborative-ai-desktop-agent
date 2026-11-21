@@ -8,6 +8,10 @@ def collect_process_snapshot() -> list[dict]:
 
     for process in psutil.process_iter():
         try:
+            pid = getattr(process, "pid", 0)
+
+            if pid <= 0:
+                continue
             with process.oneshot():
                 memory_info = process.memory_info()
 
