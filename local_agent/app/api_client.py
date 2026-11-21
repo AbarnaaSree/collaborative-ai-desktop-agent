@@ -35,6 +35,22 @@ class AgentAPIClient:
             response.raise_for_status()
             return response.json()
 
+    def submit_process_snapshot(self, processes: list[dict]) -> dict:
+        """Submit a process snapshot to the backend."""
+
+        if not processes:
+            raise ValueError("Process snapshot must contain at least one process")
+
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(
+                f"{self.base_url}/api/v1/agents/processes",
+                json={"processes": processes},
+                headers=self._get_headers(),
+            )
+
+            response.raise_for_status()
+            return response.json()
+
     def send_heartbeat(self) -> dict:
         """Send an agent heartbeat to the backend."""
 

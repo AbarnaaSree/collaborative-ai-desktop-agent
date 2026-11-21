@@ -5,7 +5,7 @@ import time
 from local_agent.app.api_client import AgentAPIClient
 from local_agent.app.config import settings
 from local_agent.app.system_monitor import collect_system_metrics
-
+from local_agent.monitoring.process_monitor import collect_process_snapshot
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +23,11 @@ def run_agent():
     heartbeat_interval = settings.AGENT_HEARTBEAT_INTERVAL_SECONDS
     metrics_interval = settings.AGENT_METRIC_INTERVAL_SECONDS
 
+    process_interval = settings.AGENT_PROCESS_INTERVAL_SECONDS
+
     last_heartbeat = 0.0
     last_metrics = 0.0
+    last_process = 0.0
 
     logger.info("Starting desktop agent: %s", settings.AGENT_NAME)
 
@@ -56,6 +59,26 @@ def run_agent():
                 logger.exception("Metrics submission failed")
 
             last_metrics = time.monotonic()
+
+        if current_time - last_process >= process_interval:
+            try:
+                processes = collect_process_snapshot()
+
+                if processes:
+                    response = client.submit_process_snapshot(processes)
+
+                    logger.info(
+                        "Process snapshot submitted | Count: %s | Snapshot: %s",
+                        response["process_count"],
+                        response["snapshot_uid"],
+                    )
+                else:
+                    logger.warning("No accessible processes found in snapshot")
+
+            except Exception:
+                logger.exception("Process snapshot submission failed")
+
+            last_process = time.monotonic()
 
         time.sleep(1)
 

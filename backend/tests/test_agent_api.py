@@ -798,3 +798,154 @@ def test_rotate_agent_token_requires_authentication(client):
     )
 
     assert response.status_code == 401
+
+def sample_process_snapshot_payload():
+    """Return a valid process snapshot for API tests."""
+
+    return {
+        "processes": [
+            {
+                "pid": 1234,
+                "name": "example.exe",
+                "status": "running",
+                "cpu_percent": 12.5,
+                "memory_rss": 64_000_000,
+                "create_time": 1730000000.0,
+            },
+            {
+                "pid": 5678,
+                "name": "another.exe",
+                "status": "sleeping",
+                "cpu_percent": 0.0,
+                "memory_rss": 32_000_000,
+                "create_time": 1730000100.0,
+            },
+        ]
+    }
+
+
+def test_submit_agent_process_snapshot_api(client):
+    """Test submitting a process snapshot from an authenticated agent."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "processsnapshot@example.com",
+    )
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=sample_process_snapshot_payload(),
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["snapshot_uid"]
+    assert data["process_count"] == 2
+
+
+def test_submit_agent_process_snapshot_without_authentication(client):
+    """Reject process snapshot submissions without agent authentication."""
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        json=sample_process_snapshot_payload(),
+    )
+
+    assert response.status_code == 401
+
+
+def test_submit_invalid_agent_process_snapshot_api(client):
+    """Reject process snapshots containing invalid process data."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "invalidprocesssnapshot@example.com",
+    )
+
+    payload = sample_process_snapshot_payload()
+    payload["processes"][0]["pid"] = 0
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+def test_get_latest_agent_process_snapshot_api(client):
+    agent_token = register_agent_and_get_token(
+        client,
+        "latestprocess@example.com",
+    )
+
+    submit_response = client.post(
+        "/api/v1/agents/processes",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=sample_process_snapshot_payload(),
+    )
+
+    assert submit_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/processes/latest",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["snapshot_uid"] == submit_response.json()["snapshot_uid"]
+    assert data["process_count"] == 2
+    assert len(data["processes"]) == 2
+    assert data["processes"][0]["pid"] == 1234
+    assert data["processes"][1]["pid"] == 5678
+
+
+def test_get_latest_process_snapshot_without_snapshot_api(client):
+    agent_token = register_agent_and_get_token(
+        client,
+        "nosnapshot@example.com",
+    )
+
+    response = client.get(
+        "/api/v1/agents/processes/latest",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_get_latest_process_snapshot_without_authentication(client):
+    response = client.get("/api/v1/agents/processes/latest")
+
+    assert response.status_code == 401
+
+
+def test_agent_cannot_access_another_agents_process_snapshot(client):
+    first_agent_token = register_agent_and_get_token(
+        client,
+        "firstprocessagent@example.com",
+    )
+    second_agent_token = register_agent_and_get_token(
+        client,
+        "secondprocessagent@example.com",
+    )
+
+    submit_response = client.post(
+        "/api/v1/agents/processes",
+        headers={"Authorization": f"Bearer {first_agent_token}"},
+        json=sample_process_snapshot_payload(),
+    )
+
+    assert submit_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/processes/latest",
+        headers={"Authorization": f"Bearer {second_agent_token}"},
+    )
+
+    assert response.status_code == 404

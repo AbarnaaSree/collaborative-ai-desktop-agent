@@ -40,6 +40,16 @@ from app.services.agent_service import (
     register_agent,
     rotate_agent_token,
 )
+from app.schemas.agent_process import (
+    AgentProcessResponse,
+    AgentProcessSnapshotCreate,
+    AgentProcessSnapshotDetailResponse,
+    AgentProcessSnapshotResponse,
+)
+from app.services.agent_process_service import (
+    get_latest_process_snapshot,
+    store_process_snapshot,
+)
 
 router = APIRouter(
     prefix="/agents",
@@ -256,4 +266,68 @@ def metric_history(
         db=db,
         agent_id=current_agent.id,
         limit=limit,
+    )
+
+@router.post(
+    "/processes",
+    response_model=AgentProcessSnapshotResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_process_snapshot(
+    snapshot_data: AgentProcessSnapshotCreate,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Store a process snapshot from the authenticated desktop agent."""
+
+    snapshot_uid, process_count = store_process_snapshot(
+        db=db,
+        agent_id=current_agent.id,
+        snapshot=snapshot_data,
+    )
+
+    return AgentProcessSnapshotResponse(
+        snapshot_uid=snapshot_uid,
+        process_count=process_count,
+    )
+
+@router.get(
+    "/processes/latest",
+    response_model=AgentProcessSnapshotDetailResponse,
+    status_code=status.HTTP_200_OK,
+)
+def latest_process_snapshot(
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Retrieve the latest process snapshot for the authenticated agent."""
+
+    processes = get_latest_process_snapshot(
+        db=db,
+        agent_id=current_agent.id,
+    )
+
+    if not processes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No process snapshot found",
+        )
+
+    latest_process = processes[0]
+
+    return AgentProcessSnapshotDetailResponse(
+        snapshot_uid=latest_process.snapshot_uid,
+        recorded_at=latest_process.recorded_at,
+        process_count=len(processes),
+        processes=[
+            AgentProcessResponse(
+                pid=process.pid,
+                name=process.name,
+                status=process.status,
+                cpu_percent=process.cpu_percent,
+                memory_rss=process.memory_rss,
+                create_time=process.create_time,
+            )
+            for process in processes
+        ],
     )
