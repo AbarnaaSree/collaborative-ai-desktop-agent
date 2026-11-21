@@ -95,3 +95,25 @@ def get_process_snapshot_history(
         }
         for row in rows
     ]
+
+def get_process_snapshot_by_uid(
+    db: Session,
+    agent_id: int,
+    snapshot_uid: str,
+) -> list[AgentProcess] | None:
+    """Retrieve one process snapshot belonging to a specific agent."""
+
+    processes = (
+        db.query(AgentProcess)
+        .filter(
+            AgentProcess.agent_id == agent_id,
+            AgentProcess.snapshot_uid == snapshot_uid,
+        )
+        .order_by(AgentProcess.pid.asc())
+        .all()
+    )
+
+    if not processes:
+        return None
+
+    return processes

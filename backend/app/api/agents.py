@@ -49,9 +49,11 @@ from app.schemas.agent_process import (
 )
 from app.services.agent_process_service import (
     get_latest_process_snapshot,
-    store_process_snapshot,
     get_process_snapshot_history,
+    get_process_snapshot_by_uid,
+    store_process_snapshot,
 )
+from uuid import UUID
 
 router = APIRouter(
     prefix="/agents",
@@ -356,4 +358,45 @@ def process_snapshot_history(
         db=db,
         agent_id=current_agent.id,
         limit=limit,
+    )
+
+@router.get(
+    "/processes/{snapshot_uid}",
+    response_model=AgentProcessSnapshotDetailResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_process_snapshot(
+    snapshot_uid: UUID,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Retrieve a specific process snapshot for the authenticated agent."""
+
+    processes = get_process_snapshot_by_uid(
+        db=db,
+        agent_id=current_agent.id,
+        snapshot_uid=str(snapshot_uid),
+    )
+
+    if not processes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Process snapshot not found",
+        )
+
+    return AgentProcessSnapshotDetailResponse(
+        snapshot_uid=processes[0].snapshot_uid,
+        recorded_at=processes[0].recorded_at,
+        process_count=len(processes),
+        processes=[
+            AgentProcessResponse(
+                pid=process.pid,
+                name=process.name,
+                status=process.status,
+                cpu_percent=process.cpu_percent,
+                memory_rss=process.memory_rss,
+                create_time=process.create_time,
+            )
+            for process in processes
+        ],
     )

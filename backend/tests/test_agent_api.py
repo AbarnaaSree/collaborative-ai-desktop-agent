@@ -1056,3 +1056,92 @@ def test_agent_process_snapshot_history_is_isolated(client):
 
     assert len(data) == 1
     assert data[0]["snapshot_uid"] == first_submit.json()["snapshot_uid"]
+
+def test_get_agent_process_snapshot_by_uid_api(client):
+    """Retrieve a specific process snapshot by its UID."""
+    agent_token = register_agent_and_get_token(
+        client,
+        "processbyuid@example.com",
+    )
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    submit_response = client.post(
+        "/api/v1/agents/processes",
+        headers=headers,
+        json=sample_process_snapshot_payload(),
+    )
+    assert submit_response.status_code == 201
+
+    snapshot_uid = submit_response.json()["snapshot_uid"]
+
+    response = client.get(
+        f"/api/v1/agents/processes/{snapshot_uid}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["snapshot_uid"] == snapshot_uid
+    assert data["process_count"] == 2
+    assert len(data["processes"]) == 2
+    assert data["processes"][0]["pid"] == 1234
+    assert data["processes"][1]["pid"] == 5678
+
+
+def test_get_agent_process_snapshot_by_uid_not_found(client):
+    """Return 404 when the snapshot UID does not exist."""
+    agent_token = register_agent_and_get_token(
+        client,
+        "processbyuidnotfound@example.com",
+    )
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    response = client.get(
+        "/api/v1/agents/processes/"
+        "00000000-0000-0000-0000-000000000000",
+        headers=headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_get_agent_process_snapshot_by_uid_without_authentication(client):
+    """Reject snapshot lookup without agent authentication."""
+    response = client.get(
+        "/api/v1/agents/processes/"
+        "00000000-0000-0000-0000-000000000000"
+    )
+
+    assert response.status_code == 401
+
+
+def test_agent_cannot_access_another_agents_snapshot_by_uid(client):
+    """Prevent agents from retrieving another agent's snapshot."""
+    first_agent_token = register_agent_and_get_token(
+        client,
+        "firstsnapshotuidagent@example.com",
+    )
+    second_agent_token = register_agent_and_get_token(
+        client,
+        "secondsnapshotuidagent@example.com",
+    )
+
+    first_headers = {"Authorization": f"Bearer {first_agent_token}"}
+    second_headers = {"Authorization": f"Bearer {second_agent_token}"}
+
+    submit_response = client.post(
+        "/api/v1/agents/processes",
+        headers=first_headers,
+        json=sample_process_snapshot_payload(),
+    )
+    assert submit_response.status_code == 201
+
+    snapshot_uid = submit_response.json()["snapshot_uid"]
+
+    response = client.get(
+        f"/api/v1/agents/processes/{snapshot_uid}",
+        headers=second_headers,
+    )
+
+    assert response.status_code == 404
