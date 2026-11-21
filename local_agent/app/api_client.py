@@ -62,3 +62,38 @@ class AgentAPIClient:
 
             response.raise_for_status()
             return response.json()
+
+    def get_pending_commands(self) -> list[dict]:
+        """Fetch and claim pending commands assigned to this agent."""
+
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.get(
+                f"{self.base_url}/api/v1/agents/commands/pending",
+                headers=self._get_headers(),
+            )
+
+            response.raise_for_status()
+            return response.json()
+
+    def report_command_result(
+        self,
+        command_uid: str,
+        status: str,
+        result_message: str | None = None,
+    ) -> dict:
+        """Report the execution result of a claimed command."""
+
+        payload = {
+            "status": status,
+            "result_message": result_message,
+        }
+
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(
+                f"{self.base_url}/api/v1/agents/commands/{command_uid}/result",
+                json=payload,
+                headers=self._get_headers(),
+            )
+
+            response.raise_for_status()
+            return response.json()
