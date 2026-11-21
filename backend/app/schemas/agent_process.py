@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 
 class AgentProcessCreate(BaseModel):
@@ -29,6 +29,8 @@ class AgentProcessSnapshotResponse(BaseModel):
 class AgentProcessResponse(BaseModel):
     """A process included in a retrieved snapshot."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     pid: int
     name: str
     status: str
@@ -51,3 +53,26 @@ class AgentProcessSnapshotHistoryItem(BaseModel):
     snapshot_uid: UUID
     recorded_at: datetime
     process_count: int
+
+class AgentProcessComparisonItem(BaseModel):
+    """Compare one process across two snapshots."""
+
+    previous: AgentProcessResponse
+    current: AgentProcessResponse
+    cpu_percent_delta: float
+    memory_rss_delta: int
+    status_changed: bool
+
+
+class AgentProcessSnapshotComparisonResponse(BaseModel):
+    """Compare two process snapshots."""
+
+    first_snapshot_uid: UUID
+    second_snapshot_uid: UUID
+    first_recorded_at: datetime
+    second_recorded_at: datetime
+
+    added_processes: list[AgentProcessResponse]
+    removed_processes: list[AgentProcessResponse]
+    changed_processes: list[AgentProcessComparisonItem]
+    unchanged_processes: list[AgentProcessComparisonItem]

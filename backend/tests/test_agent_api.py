@@ -1145,3 +1145,141 @@ def test_agent_cannot_access_another_agents_snapshot_by_uid(client):
     )
 
     assert response.status_code == 404
+
+def test_compare_agent_process_snapshots_api(client):
+    """Compare added, removed, changed, and unchanged processes."""
+
+    agent_token = register_agent_and_get_token(
+        client,
+        "processcompare@example.com",
+    )
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    first_payload = sample_process_snapshot_payload()
+    unchanged_process = {
+        "pid": 7777,
+        "name": "unchanged.exe",
+        "status": "running",
+        "cpu_percent": 5.0,
+        "memory_rss": 10_000_000,
+        "create_time": 1730000200.0,
+    }
+    first_payload["processes"].append(unchanged_process)
+
+    first_response = client.post(
+        "/api/v1/agents/processes",
+        headers=headers,
+        json=first_payload,
+    )
+    assert first_response.status_code == 201
+
+    second_payload = sample_process_snapshot_payload()
+    second_payload["processes"][0]["cpu_percent"] = 20.0
+    second_payload["processes"][0]["memory_rss"] = 72_000_000
+    second_payload["processes"][0]["status"] = "sleeping"
+
+    added_process = {
+        "pid": 9999,
+        "name": "newprocess.exe",
+        "status": "running",
+        "cpu_percent": 1.0,
+        "memory_rss": 8_000_000,
+        "create_time": 1730000300.0,
+    }
+
+    second_payload["processes"] = [
+        second_payload["processes"][0],
+        added_process,
+        unchanged_process,
+    ]
+
+    second_response = client.post(
+        "/api/v1/agents/processes",
+        headers=headers,
+        json=second_payload,
+    )
+    assert second_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/processes/compare",
+        headers=headers,
+        params={
+            "first_snapshot_uid": first_response.json()["snapshot_uid"],
+            "second_snapshot_uid": second_response.json()["snapshot_uid"],
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert [item["pid"] for item in data["added_processes"]] == [9999]
+    assert [item["pid"] for item in data["removed_processes"]] == [5678]
+
+    changed = data["changed_processes"]
+    assert len(changed) == 1
+    assert changed[0]["current"]["pid"] == 1234
+    assert changed[0]["cpu_percent_delta"] == 7.5
+    assert changed[0]["memory_rss_delta"] == 8_000_000
+    assert changed[0]["status_changed"] is True
+
+    unchanged = data["unchanged_processes"]
+    assert len(unchanged) == 1
+    assert unchanged[0]["current"]["pid"] == 7777
+    assert unchanged[0]["cpu_percent_delta"] == 0.0
+    assert unchanged[0]["memory_rss_delta"] == 0
+    assert unchanged[0]["status_changed"] is False
+
+def test_compare_agent_process_snapshots_not_found(client):
+    token = register_agent_and_get_token(
+        client,
+        email="compare-not-found@example.com",
+    )
+
+    response = client.get(
+        "/api/v1/agents/processes/compare",
+        params={
+            "first_snapshot_uid": "00000000-0000-0000-0000-000000000001",
+            "second_snapshot_uid": "00000000-0000-0000-0000-000000000002",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "One or both process snapshots not found"
+
+def test_compare_agent_process_snapshots_agent_isolation(client):
+    first_token = register_agent_and_get_token(
+        client,
+        email="compare-agent-a@example.com",
+    )
+    second_token = register_agent_and_get_token(
+        client,
+        email="compare-agent-b@example.com",
+    )
+
+    first_headers = {
+        "Authorization": f"Bearer {first_token}"
+    }
+    second_headers = {
+        "Authorization": f"Bearer {second_token}"
+    }
+
+    snapshot_response = client.post(
+        "/api/v1/agents/processes",
+        headers=first_headers,
+        json=sample_process_snapshot_payload(),
+    )
+    assert snapshot_response.status_code == 201
+
+    snapshot_uid = snapshot_response.json()["snapshot_uid"]
+
+    response = client.get(
+        "/api/v1/agents/processes/compare",
+        headers=second_headers,
+        params={
+            "first_snapshot_uid": snapshot_uid,
+            "second_snapshot_uid": snapshot_uid,
+        },
+    )
+
+    assert response.status_code == 404

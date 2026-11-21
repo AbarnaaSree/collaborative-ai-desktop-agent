@@ -117,3 +117,86 @@ def get_process_snapshot_by_uid(
         return None
 
     return processes
+
+def compare_process_snapshots(
+    db: Session,
+    agent_id: int,
+    first_snapshot_uid: str,
+    second_snapshot_uid: str,
+) -> dict | None:
+    """Compare two process snapshots belonging to one agent."""
+
+    first_snapshot = get_process_snapshot_by_uid(
+        db=db,
+        agent_id=agent_id,
+        snapshot_uid=first_snapshot_uid,
+    )
+    second_snapshot = get_process_snapshot_by_uid(
+        db=db,
+        agent_id=agent_id,
+        snapshot_uid=second_snapshot_uid,
+    )
+
+    if not first_snapshot or not second_snapshot:
+        return None
+
+    first_by_identity = {
+        (process.pid, process.create_time): process
+        for process in first_snapshot
+    }
+    second_by_identity = {
+        (process.pid, process.create_time): process
+        for process in second_snapshot
+    }
+
+    first_recorded_at = first_snapshot[0].recorded_at
+    second_recorded_at = second_snapshot[0].recorded_at
+
+    added_processes = [
+        process
+        for identity, process in second_by_identity.items()
+        if identity not in first_by_identity
+    ]
+
+    removed_processes = [
+        process
+        for identity, process in first_by_identity.items()
+        if identity not in second_by_identity
+    ]
+
+    changed_processes = []
+    unchanged_processes = []
+
+    for identity, current in second_by_identity.items():
+        previous = first_by_identity.get(identity)
+
+        if previous is None:
+            continue
+
+        cpu_delta = current.cpu_percent - previous.cpu_percent
+        memory_delta = current.memory_rss - previous.memory_rss
+        status_changed = current.status != previous.status
+
+        comparison = {
+            "previous": previous,
+            "current": current,
+            "cpu_percent_delta": cpu_delta,
+            "memory_rss_delta": memory_delta,
+            "status_changed": status_changed,
+        }
+
+        if cpu_delta != 0 or memory_delta != 0 or status_changed:
+            changed_processes.append(comparison)
+        else:
+            unchanged_processes.append(comparison)
+
+    return {
+        "first_snapshot_uid": first_snapshot_uid,
+        "second_snapshot_uid": second_snapshot_uid,
+        "first_recorded_at": first_recorded_at,
+        "second_recorded_at": second_recorded_at,
+        "added_processes": added_processes,
+        "removed_processes": removed_processes,
+        "changed_processes": changed_processes,
+        "unchanged_processes": unchanged_processes,
+    }

@@ -42,12 +42,14 @@ from app.services.agent_service import (
 )
 from app.schemas.agent_process import (
     AgentProcessResponse,
+    AgentProcessSnapshotComparisonResponse,
     AgentProcessSnapshotCreate,
     AgentProcessSnapshotDetailResponse,
     AgentProcessSnapshotResponse,
     AgentProcessSnapshotHistoryItem,
 )
 from app.services.agent_process_service import (
+    compare_process_snapshots,
     get_latest_process_snapshot,
     get_process_snapshot_history,
     get_process_snapshot_by_uid,
@@ -359,6 +361,35 @@ def process_snapshot_history(
         agent_id=current_agent.id,
         limit=limit,
     )
+
+
+@router.get(
+    "/processes/compare",
+    response_model=AgentProcessSnapshotComparisonResponse,
+    status_code=status.HTTP_200_OK,
+)
+def compare_agent_process_snapshots(
+    first_snapshot_uid: UUID,
+    second_snapshot_uid: UUID,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Compare two process snapshots for the authenticated agent."""
+
+    result = compare_process_snapshots(
+        db=db,
+        agent_id=current_agent.id,
+        first_snapshot_uid=str(first_snapshot_uid),
+        second_snapshot_uid=str(second_snapshot_uid),
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or both process snapshots not found",
+        )
+
+    return AgentProcessSnapshotComparisonResponse(**result)
 
 @router.get(
     "/processes/{snapshot_uid}",
