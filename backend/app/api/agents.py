@@ -55,6 +55,17 @@ from app.services.agent_process_service import (
     get_process_snapshot_by_uid,
     store_process_snapshot,
 )
+from app.schemas.agent_command import (
+    AgentStopProcessRequest,
+    AgentCommandResponse,
+)
+from app.services.agent_command_service import (
+    create_stop_process_command,
+)
+from app.models import AgentCommand
+from datetime import datetime, timezone
+from app.schemas.agent_command import AgentCommandResponse
+from app.schemas.agent_command import AgentCommandResultRequest
 from uuid import UUID
 
 router = APIRouter(
@@ -125,6 +136,35 @@ def rotate_token(
         "agent_token": new_token,
     }
 
+@router.post(
+    "/{agent_id}/commands/stop-process",
+    response_model=AgentCommandResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def request_stop_process(
+    agent_id: int,
+    command_data: AgentStopProcessRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Queue a process stop request for an authorized dashboard user."""
+
+    command = create_stop_process_command(
+        db=db,
+        agent_id=agent_id,
+        requested_by_user_id=current_user.id,
+        target_pid=command_data.pid,
+        target_create_time=command_data.create_time,
+        target_process_name=command_data.process_name,
+    )
+
+    if command is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found or access denied",
+        )
+
+    return command
 
 @router.post(
     "/heartbeat",
@@ -431,3 +471,68 @@ def get_process_snapshot(
             for process in processes
         ],
     )
+
+@router.get(
+    "/commands/pending",
+    response_model=list[AgentCommandResponse],
+)
+def get_pending_commands(
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Claim pending commands for the authenticated desktop agent."""
+
+    commands = (
+        db.query(AgentCommand)
+        .filter(
+            AgentCommand.agent_id == current_agent.id,
+            AgentCommand.status == "pending",
+        )
+        .order_by(AgentCommand.created_at)
+        .with_for_update()
+        .limit(10)
+        .all()
+    )
+
+    for command in commands:
+        command.status = "claimed"
+        command.claimed_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    for command in commands:
+        db.refresh(command)
+
+    return commands
+
+@router.post(
+    "/commands/{command_uid}/result",
+    response_model=AgentCommandResponse,
+)
+def report_command_result(
+    command_uid: UUID,
+    result_data: AgentCommandResultRequest,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Record the result of a command executed by the desktop agent."""
+
+    command = db.query(AgentCommand).filter(
+        AgentCommand.command_uid == str(command_uid),
+        AgentCommand.agent_id == current_agent.id,
+    ).first()
+
+    if command is None or command.status != "claimed":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Command not found or not claimed",
+        )
+
+    command.status = result_data.status
+    command.result_message = result_data.result_message
+    command.completed_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(command)
+
+    return command
