@@ -15,6 +15,7 @@ class AgentSettings(BaseSettings):
     AGENT_METRIC_INTERVAL_SECONDS: int = 60
     AGENT_HEARTBEAT_INTERVAL_SECONDS: int = 30
     AGENT_PROCESS_INTERVAL_SECONDS: int = 60
+    AGENT_COMMAND_POLL_INTERVAL_SECONDS: int = 5
     AGENT_REQUEST_TIMEOUT_SECONDS: int = 15
 
     model_config = SettingsConfigDict(

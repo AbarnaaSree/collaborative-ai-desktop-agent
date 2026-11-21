@@ -6,6 +6,7 @@ from local_agent.app.api_client import AgentAPIClient
 from local_agent.app.config import settings
 from local_agent.app.system_monitor import collect_system_metrics
 from local_agent.monitoring.process_monitor import collect_process_snapshot
+from local_agent.execution.process_executor import stop_process
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,10 +25,12 @@ def run_agent():
     metrics_interval = settings.AGENT_METRIC_INTERVAL_SECONDS
 
     process_interval = settings.AGENT_PROCESS_INTERVAL_SECONDS
+    command_poll_interval = settings.AGENT_COMMAND_POLL_INTERVAL_SECONDS
 
     last_heartbeat = 0.0
     last_metrics = 0.0
     last_process = 0.0
+    last_command_poll = 0.0
 
     logger.info("Starting desktop agent: %s", settings.AGENT_NAME)
 
@@ -79,6 +82,54 @@ def run_agent():
                 logger.exception("Process snapshot submission failed")
 
             last_process = time.monotonic()
+
+        if current_time - last_command_poll >= command_poll_interval:
+            try:
+                commands = client.get_pending_commands()
+
+                for command in commands:
+                    command_uid = command.get("command_uid")
+                    command_type = command.get("command_type")
+
+                    try:
+                        if command_type == "stop_process":
+                            success, message = stop_process(command)
+                        else:
+                            success = False
+                            message = f"Unsupported command type: {command_type}"
+
+                        status = "succeeded" if success else "failed"
+
+                    except Exception as exc:
+                        logger.exception(
+                            "Command execution failed | Command: %s",
+                            command_uid,
+                        )
+                        status = "failed"
+                        message = str(exc)
+
+                    try:
+                        client.report_command_result(
+                            command_uid,
+                            status,
+                            message,
+                        )
+                        logger.info(
+                            "Command completed | ID: %s | Status: %s | Result: %s",
+                            command_uid,
+                            status,
+                            message,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to report command result | Command: %s",
+                            command_uid,
+                        )
+
+            except Exception:
+                logger.exception("Command polling failed")
+
+            last_command_poll = time.monotonic()
 
         time.sleep(1)
 
