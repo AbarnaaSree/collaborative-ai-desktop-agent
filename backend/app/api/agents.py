@@ -45,10 +45,12 @@ from app.schemas.agent_process import (
     AgentProcessSnapshotCreate,
     AgentProcessSnapshotDetailResponse,
     AgentProcessSnapshotResponse,
+    AgentProcessSnapshotHistoryItem,
 )
 from app.services.agent_process_service import (
     get_latest_process_snapshot,
     store_process_snapshot,
+    get_process_snapshot_history,
 )
 
 router = APIRouter(
@@ -330,4 +332,28 @@ def latest_process_snapshot(
             )
             for process in processes
         ],
+    )
+
+@router.get(
+    "/processes/history",
+    response_model=list[AgentProcessSnapshotHistoryItem],
+    status_code=status.HTTP_200_OK,
+)
+def process_snapshot_history(
+    limit: int = 100,
+    current_agent: Agent = Depends(get_current_agent),
+    db: Session = Depends(get_db),
+):
+    """Retrieve process snapshot history for the authenticated agent."""
+
+    if not 1 <= limit <= 1000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Limit must be between 1 and 1000",
+        )
+
+    return get_process_snapshot_history(
+        db=db,
+        agent_id=current_agent.id,
+        limit=limit,
     )

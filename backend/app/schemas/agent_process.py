@@ -44,3 +44,10 @@ class AgentProcessSnapshotDetailResponse(BaseModel):
     recorded_at: datetime
     process_count: int
     processes: list[AgentProcessResponse]
+
+class AgentProcessSnapshotHistoryItem(BaseModel):
+    """Summary of one stored process snapshot."""
+
+    snapshot_uid: UUID
+    recorded_at: datetime
+    process_count: int

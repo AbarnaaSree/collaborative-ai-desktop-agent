@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.agent_process import AgentProcess
 from app.schemas.agent_process import AgentProcessSnapshotCreate
-
+from sqlalchemy import func
 
 def store_process_snapshot(
     db: Session,
@@ -63,3 +63,35 @@ def get_latest_process_snapshot(
         .order_by(AgentProcess.pid.asc())
         .all()
     )
+
+def get_process_snapshot_history(
+    db: Session,
+    agent_id: int,
+    limit: int = 100,
+) -> list[dict]:
+    """Retrieve snapshot summaries for one agent, newest first."""
+
+    rows = (
+        db.query(
+            AgentProcess.snapshot_uid.label("snapshot_uid"),
+            func.max(AgentProcess.recorded_at).label("recorded_at"),
+            func.count(AgentProcess.id).label("process_count"),
+        )
+        .filter(AgentProcess.agent_id == agent_id)
+        .group_by(AgentProcess.snapshot_uid)
+        .order_by(
+            func.max(AgentProcess.recorded_at).desc(),
+            func.max(AgentProcess.id).desc(),
+        )
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "snapshot_uid": row.snapshot_uid,
+            "recorded_at": row.recorded_at,
+            "process_count": row.process_count,
+        }
+        for row in rows
+    ]

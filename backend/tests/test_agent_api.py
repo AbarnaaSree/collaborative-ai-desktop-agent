@@ -949,3 +949,110 @@ def test_agent_cannot_access_another_agents_process_snapshot(client):
     )
 
     assert response.status_code == 404
+
+def test_get_agent_process_snapshot_history_api(client):
+    """Return snapshot history newest first with process counts."""
+    agent_token = register_agent_and_get_token(
+        client,
+        "processhistory@example.com",
+    )
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    first_response = client.post(
+        "/api/v1/agents/processes",
+        headers=headers,
+        json=sample_process_snapshot_payload(),
+    )
+    second_response = client.post(
+        "/api/v1/agents/processes",
+        headers=headers,
+        json=sample_process_snapshot_payload(),
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/processes/history",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data) == 2
+    assert data[0]["snapshot_uid"] == second_response.json()["snapshot_uid"]
+    assert data[1]["snapshot_uid"] == first_response.json()["snapshot_uid"]
+    assert all(item["process_count"] == 2 for item in data)
+
+
+def test_get_agent_process_snapshot_history_limit(client):
+    """Respect the requested history limit."""
+    agent_token = register_agent_and_get_token(
+        client,
+        "processhistorylimit@example.com",
+    )
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    for _ in range(3):
+        submit_response = client.post(
+            "/api/v1/agents/processes",
+            headers=headers,
+            json=sample_process_snapshot_payload(),
+        )
+        assert submit_response.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/processes/history?limit=2",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_get_agent_process_snapshot_history_without_authentication(client):
+    """Reject history requests without agent authentication."""
+    response = client.get("/api/v1/agents/processes/history")
+
+    assert response.status_code == 401
+
+
+def test_agent_process_snapshot_history_is_isolated(client):
+    """Only return process history belonging to the authenticated agent."""
+    first_agent_token = register_agent_and_get_token(
+        client,
+        "firsthistoryagent@example.com",
+    )
+    second_agent_token = register_agent_and_get_token(
+        client,
+        "secondhistoryagent@example.com",
+    )
+
+    first_headers = {"Authorization": f"Bearer {first_agent_token}"}
+    second_headers = {"Authorization": f"Bearer {second_agent_token}"}
+
+    first_submit = client.post(
+        "/api/v1/agents/processes",
+        headers=first_headers,
+        json=sample_process_snapshot_payload(),
+    )
+    second_submit = client.post(
+        "/api/v1/agents/processes",
+        headers=second_headers,
+        json=sample_process_snapshot_payload(),
+    )
+
+    assert first_submit.status_code == 201
+    assert second_submit.status_code == 201
+
+    response = client.get(
+        "/api/v1/agents/processes/history",
+        headers=first_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data) == 1
+    assert data[0]["snapshot_uid"] == first_submit.json()["snapshot_uid"]
