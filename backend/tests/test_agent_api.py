@@ -1283,3 +1283,160 @@ def test_compare_agent_process_snapshots_agent_isolation(client):
     )
 
     assert response.status_code == 404
+
+
+def test_request_stop_process_success_api(client):
+    """Queue a stop-process command for the user's own agent."""
+
+    user_token, _ = register_and_login(
+        client,
+        "stopprocessowner@example.com",
+    )
+
+    agent_registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Stop Process Test Agent",
+            "hostname": "STOP-TEST-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert agent_registration.status_code == 201
+
+    agent_id = agent_registration.json()["id"]
+
+    response = client.post(
+        f"/api/v1/agents/{agent_id}/commands/stop-process",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "pid": 4321,
+            "create_time": 123456.0,
+            "process_name": "test-process.exe",
+        },
+    )
+
+    assert response.status_code == 202
+
+    data = response.json()
+
+    assert data["command_uid"]
+    assert data["target_create_time"] == 123456.0
+    assert data["command_type"] == "stop_process"
+    assert data["target_pid"] == 4321
+    assert data["target_process_name"] == "test-process.exe"
+    assert data["status"] == "pending"
+
+
+def test_agent_claims_pending_stop_process_command_api(client):
+    """Verify the agent can claim a queued stop-process command."""
+
+    user_token, _ = register_and_login(
+        client,
+        "claimstopcommand@example.com",
+    )
+
+    agent_registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Claim Command Test Agent",
+            "hostname": "CLAIM-TEST-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert agent_registration.status_code == 201
+    agent_id = agent_registration.json()["id"]
+    agent_token = agent_registration.json()["agent_token"]
+
+    queued = client.post(
+        f"/api/v1/agents/{agent_id}/commands/stop-process",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "pid": 9876,
+            "create_time": 456789.0,
+            "process_name": "claim-test.exe",
+        },
+    )
+
+    assert queued.status_code == 202
+    command_uid = queued.json()["command_uid"]
+
+    response = client.get(
+        "/api/v1/agents/commands/pending",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert response.status_code == 200
+
+    commands = response.json()
+    assert len(commands) == 1
+    assert commands[0]["command_uid"] == command_uid
+    assert commands[0]["status"] == "claimed"
+    assert commands[0]["claimed_at"] is not None
+
+
+def test_agent_reports_stop_process_result_api(client):
+    """Verify the agent can report a claimed command's result."""
+
+    user_token, _ = register_and_login(
+        client,
+        "reportstopresult@example.com",
+    )
+
+    agent_registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Report Result Test Agent",
+            "hostname": "RESULT-TEST-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert agent_registration.status_code == 201
+    agent_id = agent_registration.json()["id"]
+    agent_token = agent_registration.json()["agent_token"]
+
+    queued = client.post(
+        f"/api/v1/agents/{agent_id}/commands/stop-process",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "pid": 6543,
+            "create_time": 789123.0,
+            "process_name": "result-test.exe",
+        },
+    )
+
+    assert queued.status_code == 202
+    command_uid = queued.json()["command_uid"]
+
+    claimed = client.get(
+        "/api/v1/agents/commands/pending",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert claimed.status_code == 200
+    assert claimed.json()[0]["status"] == "claimed"
+
+    response = client.post(
+        f"/api/v1/agents/commands/{command_uid}/result",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json={
+            "status": "succeeded",
+            "result_message": "Process stopped successfully.",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["command_uid"] == command_uid
+    assert data["status"] == "succeeded"
+    assert data["result_message"] == "Process stopped successfully."
+    assert data["completed_at"] is not None
