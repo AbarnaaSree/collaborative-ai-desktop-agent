@@ -118,3 +118,17 @@ def mark_stale_agents_offline(db: Session) -> int:
     db.commit()
 
     return len(stale_agents)
+
+def get_user_agents(
+    db: Session,
+    user_id: int,
+) -> list[Agent]:
+    """Retrieve agents registered by one platform user."""
+
+    return list(
+        db.scalars(
+            select(Agent)
+            .where(Agent.registered_by == user_id)
+            .order_by(Agent.created_at.desc())
+        ).all()
+    )

@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.api.auth import router as auth_router
 from app.api.agents import router as agents_router
 from app.services.agent_monitor_service import monitor_agents
+from app.api.dashboard import router as dashboard_router
 
 
 @asynccontextmanager
@@ -42,6 +43,11 @@ app.include_router(
 
 app.include_router(
     agents_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    dashboard_router,
     prefix="/api/v1",
 )
 
