@@ -61,6 +61,8 @@ function App() {
   const [activeNav, setActiveNav] = useState('Overview')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('All')
+  const [selectedProcess, setSelectedProcess] =
+    useState<DashboardProcess | null>(null)
 
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null)
@@ -479,7 +481,11 @@ function App() {
                           : process.status || 'No health details reported'
 
                       return (
-                        <tr key={`${process.pid}-${process.name}`}>
+                        <tr
+                          key={`${process.pid}-${process.name}`}
+                          className="clickable-process-row"
+                          onClick={() => setSelectedProcess(process)}
+                        >
                           <td>
                             <div className="process-name">
                               <span className="process-symbol">▣</span>
@@ -516,6 +522,76 @@ function App() {
                   </tbody>
                 </table>
               </div>
+              {selectedProcess && (
+                <div className="process-details">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Process Details</h2>
+                      <p>{selectedProcess.name}</p>
+                    </div>
+
+                    <button
+                      className="text-button"
+                      onClick={() => setSelectedProcess(null)}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="process-details-grid">
+                    <div>
+                      <span>Process ID</span>
+                      <strong>{selectedProcess.pid}</strong>
+                    </div>
+
+                    <div>
+                      <span>CPU Usage</span>
+                      <strong>
+                        {selectedProcess.cpu_percent.toFixed(1)}%
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Memory Usage</span>
+                      <strong>
+                        {(selectedProcess.memory_rss / 1024 ** 2).toFixed(1)} MB
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Status</span>
+                      <strong>{selectedProcess.status || 'Unknown'}</strong>
+                    </div>
+
+                    <div>
+                      <span>Started</span>
+                      <strong>
+                        {selectedProcess.create_time
+                          ? new Date(
+                              selectedProcess.create_time * 1000,
+                            ).toLocaleString()
+                          : 'Unknown'}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Health</span>
+                      <strong>
+                        {selectedProcess.health_status || 'Unknown'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="process-health-reasons">
+                    <strong>Health Details</strong>
+                    <p>
+                      {selectedProcess.health_reasons.length > 0
+                        ? selectedProcess.health_reasons.join(' · ')
+                        : 'No health issues reported.'}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="side-panels">

@@ -905,3 +905,62 @@ tbody tr:hover {
   color: #b91c1c;
   font-size: 14px;
 }
+.process-details {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 14px;
+  background: var(--panel-bg, #ffffff);
+}
+
+.process-details-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.process-details-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--surface-bg, #f8fafc);
+}
+
+.process-details-grid span {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+}
+
+.process-details-grid strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.process-health-reasons {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
+
+.process-health-reasons p {
+  margin-top: 8px;
+  color: var(--text-muted, #64748b);
+  line-height: 1.6;
+}
+
+.clickable-process-row {
+  cursor: pointer;
+}
+
+.clickable-process-row:hover {
+  background: var(--surface-bg, #f8fafc);
+}
+
+@media (max-width: 768px) {
+  .process-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
