@@ -7,6 +7,7 @@ from local_agent.app.config import settings
 from local_agent.app.system_monitor import collect_system_metrics
 from local_agent.monitoring.process_monitor import collect_process_snapshot
 from local_agent.execution.process_executor import stop_process
+from local_agent.monitoring.health_monitor import evaluate_process_health
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,6 +67,18 @@ def run_agent():
         if current_time - last_process >= process_interval:
             try:
                 processes = collect_process_snapshot()
+
+                if processes:
+                    health_results = evaluate_process_health(processes)
+
+                    processes = [
+                        {
+                            **process,
+                            "health_status": health["health_status"],
+                            "health_reasons": health["reasons"],
+                        }
+                        for process, health in zip(processes, health_results)
+                    ]
 
                 if processes:
                     response = client.submit_process_snapshot(processes)

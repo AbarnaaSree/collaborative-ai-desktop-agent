@@ -373,6 +373,8 @@ def latest_process_snapshot(
                 cpu_percent=process.cpu_percent,
                 memory_rss=process.memory_rss,
                 create_time=process.create_time,
+                health_status=process.health_status,
+                health_reasons=process.health_reasons,
             )
             for process in processes
         ],
@@ -467,6 +469,8 @@ def get_process_snapshot(
                 cpu_percent=process.cpu_percent,
                 memory_rss=process.memory_rss,
                 create_time=process.create_time,
+                health_status=process.health_status,
+                health_reasons=process.health_reasons,
             )
             for process in processes
         ],

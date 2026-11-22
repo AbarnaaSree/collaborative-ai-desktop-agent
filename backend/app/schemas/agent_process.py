@@ -12,6 +12,8 @@ class AgentProcessCreate(BaseModel):
     cpu_percent: float = Field(ge=0)
     memory_rss: int = Field(ge=0)
     create_time: float = Field(ge=0)
+    health_status: str = Field(default="healthy", min_length=1, max_length=20)
+    health_reasons: list[str] = Field(default_factory=list)
 
 
 class AgentProcessSnapshotCreate(BaseModel):
@@ -37,6 +39,8 @@ class AgentProcessResponse(BaseModel):
     cpu_percent: float
     memory_rss: int
     create_time: float
+    health_status: str
+    health_reasons: list[str]
 
 
 class AgentProcessSnapshotDetailResponse(BaseModel):

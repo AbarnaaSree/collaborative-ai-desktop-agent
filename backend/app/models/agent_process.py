@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     func,
 )
@@ -54,7 +55,17 @@ class AgentProcess(Base):
     cpu_percent: Mapped[float] = mapped_column(Float, nullable=False)
     memory_rss: Mapped[int] = mapped_column(BigInteger, nullable=False)
     create_time: Mapped[float] = mapped_column(Float, nullable=False)
+    health_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="healthy",
+    )
 
+    health_reasons: Mapped[list[str]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+    )
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
