@@ -55,3 +55,17 @@ def test_zombie_process_is_unhealthy():
 
 def test_empty_process_list():
     assert evaluate_process_health([]) == []
+
+def test_memory_threshold_uses_percentage_of_total_ram():
+    total_memory = 8 * 1024 * 1024 * 1024  # 8 GB
+    process = make_process(
+        memory_rss=2 * 1024 * 1024 * 1024  # 2 GB
+    )
+
+    result = evaluate_process_health(
+        [process],
+        total_memory_bytes=total_memory,
+    )
+
+    assert result[0]["health_status"] == "warning"
+    assert "20.0% of total RAM" in result[0]["reasons"][0]

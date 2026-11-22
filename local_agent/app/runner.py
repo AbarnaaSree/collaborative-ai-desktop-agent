@@ -69,7 +69,11 @@ def run_agent():
                 processes = collect_process_snapshot()
 
                 if processes:
-                    health_results = evaluate_process_health(processes)
+                    metrics = collect_system_metrics()
+                    health_results = evaluate_process_health(
+                        processes,
+                        total_memory_bytes=metrics["memory_total"],
+                    )
 
                     processes = [
                         {

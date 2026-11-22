@@ -3,13 +3,29 @@ from local_agent.app.config import settings
 
 def evaluate_process_health(
     processes: list[dict],
+    total_memory_bytes: int | None = None,
 ) -> list[dict]:
     """Evaluate process health using configurable CPU and memory thresholds."""
 
     cpu_threshold = settings.AGENT_HEALTH_CPU_THRESHOLD_PERCENT
-    memory_threshold_bytes = (
-        settings.AGENT_HEALTH_MEMORY_THRESHOLD_MB * 1024 * 1024
-    )
+
+    if total_memory_bytes and total_memory_bytes > 0:
+        memory_threshold_bytes = (
+            total_memory_bytes
+            * settings.AGENT_HEALTH_MEMORY_THRESHOLD_PERCENT
+            / 100
+        )
+        memory_threshold_description = (
+            f"{settings.AGENT_HEALTH_MEMORY_THRESHOLD_PERCENT}% of total RAM"
+        )
+    else:
+        # Backward-compatible fallback for existing tests or callers.
+        memory_threshold_bytes = (
+            settings.AGENT_HEALTH_MEMORY_THRESHOLD_MB * 1024 * 1024
+        )
+        memory_threshold_description = (
+            f"{settings.AGENT_HEALTH_MEMORY_THRESHOLD_MB} MB"
+        )
 
     health_results = []
 
@@ -29,17 +45,14 @@ def evaluate_process_health(
             if health_status == "healthy":
                 health_status = "warning"
 
-            reasons.append(
-                f"CPU usage is above {cpu_threshold}%"
-            )
+            reasons.append(f"CPU usage is above {cpu_threshold}%")
 
         if memory_rss > memory_threshold_bytes:
             if health_status == "healthy":
                 health_status = "warning"
 
             reasons.append(
-                "Memory usage is above "
-                f"{settings.AGENT_HEALTH_MEMORY_THRESHOLD_MB} MB"
+                f"Memory usage is above {memory_threshold_description}"
             )
 
         health_results.append(
