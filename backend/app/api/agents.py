@@ -66,6 +66,12 @@ from app.models import AgentCommand
 from datetime import datetime, timezone
 from app.schemas.agent_command import AgentCommandResponse
 from app.schemas.agent_command import AgentCommandResultRequest
+from app.services.activity_log_service import (
+    create_activity_log,
+    get_latest_activity_by_type,
+    get_recent_activity,
+)
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 router = APIRouter(
@@ -177,10 +183,18 @@ def heartbeat(
 ):
     """Receive a heartbeat from an authenticated desktop agent."""
 
+    previous_status = current_agent.status
     agent = record_agent_heartbeat(
         db=db,
         agent=current_agent,
     )
+    if not get_recent_activity(db=db, agent_id=agent.id, limit=1):
+        create_activity_log(
+            db=db,
+            agent_id=agent.id,
+            event_type="agent_online",
+            message=f"{agent.name} is online",
+        )
 
     return AgentHeartbeatResponse(
         agent_uid=agent.agent_uid,
@@ -283,11 +297,40 @@ def submit_metrics(
 ):
     """Store resource metrics from an authenticated desktop agent."""
 
-    return create_agent_metric(
+    metric = create_agent_metric(
         db=db,
         agent_id=current_agent.id,
         metric_data=metric_data,
     )
+
+    latest_activity = get_latest_activity_by_type(
+        db=db,
+        agent_id=current_agent.id,
+        event_type="metrics_update",
+    )
+
+    should_log = latest_activity is None
+
+    if latest_activity is not None:
+        last_logged_at = latest_activity.created_at
+
+        if last_logged_at.tzinfo is None:
+            last_logged_at = last_logged_at.replace(tzinfo=timezone.utc)
+
+        should_log = (
+            datetime.now(timezone.utc) - last_logged_at
+            >= timedelta(minutes=5)
+        )
+
+    if should_log:
+        create_activity_log(
+            db=db,
+            agent_id=current_agent.id,
+            event_type="metrics_update",
+            message="System metrics updated",
+        )
+
+    return metric
 
 
 @router.get(
@@ -330,6 +373,12 @@ def submit_process_snapshot(
         db=db,
         agent_id=current_agent.id,
         snapshot=snapshot_data,
+    )
+    create_activity_log(
+        db=db,
+        agent_id=current_agent.id,
+        event_type="process_snapshot",
+        message=f"Process snapshot received: {process_count} processes",
     )
 
     return AgentProcessSnapshotResponse(

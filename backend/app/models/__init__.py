@@ -6,6 +6,7 @@ from app.models.agent_connection import AgentConnection
 from app.models.agent_metric import AgentMetric
 from app.models.agent_process import AgentProcess
 from app.models.agent_command import AgentCommand
+from app.models.activity_log import ActivityLog
 
 __all__ = [
     "User",
@@ -16,4 +17,5 @@ __all__ = [
     "AgentMetric",
     "AgentProcess",
     "AgentCommand",
+    "ActivityLog",
 ]

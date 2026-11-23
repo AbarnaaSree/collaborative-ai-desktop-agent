@@ -43,6 +43,14 @@ interface DashboardOverview {
   process_count: number
 }
 
+interface ActivityLog {
+  id: number
+  agent_id: number
+  event_type: string
+  message: string
+  created_at: string
+}
+
 function normalizeHealth(status: string): string {
   const normalized = status.toLowerCase()
 
@@ -67,6 +75,9 @@ function App() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null)
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null)
+  const [activities, setActivities] = useState<ActivityLog[]>([])
+  const [loadingActivity, setLoadingActivity] = useState(false)
+  const [activityError, setActivityError] = useState('')
 
   const [loadingAgents, setLoadingAgents] = useState(false)
   const [loadingDashboard, setLoadingDashboard] = useState(false)
@@ -186,6 +197,52 @@ function App() {
     }
 
     loadDashboard()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, selectedAgentId, refreshKey])
+
+  // Load recent activity for the selected agent.
+  useEffect(() => {
+    if (!token || selectedAgentId === null) {
+      setActivities([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadActivity() {
+      setLoadingActivity(true)
+      setActivityError('')
+
+      try {
+        const result = await apiRequest<ActivityLog[]>(
+          `/dashboard/activity/${selectedAgentId}?limit=10`,
+          token,
+        )
+
+        if (!cancelled) {
+          setActivities(result)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load activity:', error)
+          setActivityError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load activity',
+          )
+          setActivities([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingActivity(false)
+        }
+      }
+    }
+
+    loadActivity()
 
     return () => {
       cancelled = true
@@ -644,10 +701,27 @@ function App() {
                   </button>
                 </div>
 
-                <p className="subtitle">
-                  Activity events will appear here when the activity log API
-                  is connected.
-                </p>
+                <div className="activity-list">
+                  {loadingActivity ? (
+                    <p className="subtitle">Loading activity...</p>
+                  ) : activityError ? (
+                    <p className="subtitle">{activityError}</p>
+                  ) : activities.length === 0 ? (
+                    <p className="subtitle">No activity recorded yet.</p>
+                  ) : (
+                    activities.map((activity) => (
+                      <div className="activity-item" key={activity.id}>
+                        <div className="activity-item-content">
+                          <strong>{activity.event_type}</strong>
+                          <p>{activity.message}</p>
+                          <small>
+                            {new Date(activity.created_at).toLocaleString()}
+                          </small>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </section>

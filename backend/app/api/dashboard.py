@@ -7,6 +7,8 @@ from app.models import User
 from app.services.agent_service import get_user_agents
 from app.services.agent_metric_service import get_agent_metrics
 from app.services.agent_process_service import get_latest_process_snapshot
+from app.schemas.activity_log import ActivityLogResponse
+from app.services.activity_log_service import get_recent_activity
 
 router = APIRouter(
     prefix="/dashboard",
@@ -117,3 +119,37 @@ def get_dashboard_overview(
         ],
         "process_count": len(processes),
     }
+
+@router.get(
+    "/activity/{agent_id}",
+    response_model=list[ActivityLogResponse],
+)
+def get_dashboard_activity(
+    agent_id: int,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return recent activity for an agent owned by the current user."""
+
+    agents = get_user_agents(
+        db=db,
+        user_id=current_user.id,
+    )
+
+    agent = next(
+        (item for item in agents if item.id == agent_id),
+        None,
+    )
+
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found",
+        )
+
+    return get_recent_activity(
+        db=db,
+        agent_id=agent.id,
+        limit=max(1, min(limit, 100)),
+    )

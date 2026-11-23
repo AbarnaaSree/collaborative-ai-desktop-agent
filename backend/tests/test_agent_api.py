@@ -264,18 +264,33 @@ def test_register_agent_with_invalid_token_api(client):
 
 
 def test_agent_heartbeat_success_api(client):
-    """Test heartbeat from an authenticated desktop agent."""
+    """Test heartbeat creates an agent online activity."""
 
-    agent_token = register_agent_and_get_token(
+    user_token, _ = register_and_login(
         client,
         "heartbeat@example.com",
     )
 
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Heartbeat Test Agent",
+            "hostname": "TEST-PC-001",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
     response = client.post(
         "/api/v1/agents/heartbeat",
-        headers={
-            "Authorization": f"Bearer {agent_token}"
-        },
+        headers={"Authorization": f"Bearer {agent_token}"},
     )
 
     assert response.status_code == 200
@@ -285,6 +300,20 @@ def test_agent_heartbeat_success_api(client):
     assert data["agent_uid"] is not None
     assert data["status"] == "online"
     assert data["last_heartbeat"] is not None
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=10",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    assert any(
+        activity["event_type"] == "agent_online"
+        for activity in activities
+    )
 
 
 def test_agent_heartbeat_without_token_api(client):
@@ -490,12 +519,29 @@ def sample_metric_payload():
 
 
 def test_submit_agent_metrics_api(client):
-    """Test submitting resource metrics from an authenticated agent."""
+    """Test metrics submission creates a metrics activity."""
 
-    agent_token = register_agent_and_get_token(
+    user_token, _ = register_and_login(
         client,
         "metrics@example.com",
     )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Metrics Test Agent",
+            "hostname": "METRICS-PC-001",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
 
     response = client.post(
         "/api/v1/agents/metrics",
@@ -507,12 +553,27 @@ def test_submit_agent_metrics_api(client):
 
     data = response.json()
 
-    assert data["agent_id"] is not None
+    assert data["agent_id"] == agent_id
     assert data["cpu_usage"] == 45.5
     assert data["memory_usage"] == 65.0
     assert data["disk_usage"] == 70.0
     assert data["uptime_seconds"] == 86400
     assert data["recorded_at"] is not None
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=10",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    assert any(
+        activity["event_type"] == "metrics_update"
+        and activity["message"] == "System metrics updated"
+        for activity in activities
+    )
 
 
 def test_get_agent_metrics_api(client):
@@ -825,12 +886,29 @@ def sample_process_snapshot_payload():
 
 
 def test_submit_agent_process_snapshot_api(client):
-    """Test submitting a process snapshot from an authenticated agent."""
+    """Test snapshot submission creates a process snapshot activity."""
 
-    agent_token = register_agent_and_get_token(
+    user_token, _ = register_and_login(
         client,
         "processsnapshot@example.com",
     )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Heartbeat Test Agent",
+            "hostname": "TEST-PC-001",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
 
     response = client.post(
         "/api/v1/agents/processes",
@@ -841,9 +919,23 @@ def test_submit_agent_process_snapshot_api(client):
     assert response.status_code == 201
 
     data = response.json()
-
     assert data["snapshot_uid"]
     assert data["process_count"] == 2
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=10",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    assert any(
+        activity["event_type"] == "process_snapshot"
+        and activity["message"] == "Process snapshot received: 2 processes"
+        for activity in activities
+    )
 
 
 def test_submit_agent_process_snapshot_without_authentication(client):
@@ -1440,3 +1532,59 @@ def test_agent_reports_stop_process_result_api(client):
     assert data["status"] == "succeeded"
     assert data["result_message"] == "Process stopped successfully."
     assert data["completed_at"] is not None
+
+def test_metrics_activity_is_throttled(client):
+    """Test repeated metrics submissions do not create duplicate activity."""
+
+    user_token, _ = register_and_login(
+        client,
+        "metrics-throttle@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Metrics Throttle Agent",
+            "hostname": "METRICS-THROTTLE-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    first_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=sample_metric_payload(),
+    )
+    second_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=sample_metric_payload(),
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=10",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    metrics_activities = [
+        activity
+        for activity in activity_response.json()
+        if activity["event_type"] == "metrics_update"
+    ]
+
+    assert len(metrics_activities) == 1
