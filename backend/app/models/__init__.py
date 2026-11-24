@@ -7,12 +7,14 @@ from app.models.agent_metric import AgentMetric
 from app.models.agent_process import AgentProcess
 from app.models.agent_command import AgentCommand
 from app.models.activity_log import ActivityLog
+from app.models.agent_session import AgentSession
 
 __all__ = [
     "User",
     "Team",
     "TeamMember",
     "Agent",
+    "AgentSession",
     "AgentConnection",
     "AgentMetric",
     "AgentProcess",
