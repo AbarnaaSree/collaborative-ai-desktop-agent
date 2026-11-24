@@ -204,3 +204,147 @@ def test_agent_sessions_require_authentication(client):
         },
     )
     assert response.status_code == 401
+
+def create_test_session(client, token, name="Lifecycle Test Session"):
+    """Create a session and return its UID."""
+
+    response = client.post(
+        "/api/v1/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "name": name,
+            "agent_type": "website_monitor",
+            "task_config": {},
+        },
+    )
+
+    assert response.status_code == 201
+    return response.json()["session_uid"]
+
+
+def test_agent_session_lifecycle(client):
+    token = register_and_login_session_user(
+        client,
+        "lifecycle-session@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session_uid = create_test_session(client, token)
+
+    # Start: created -> running
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/start",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
+    assert response.json()["started_at"] is not None
+
+    # Pause: running -> paused
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/pause",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "paused"
+
+    # Resume: paused -> running
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/resume",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
+
+    # Stop: running -> stopped
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/stop",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "stopped"
+    assert response.json()["completed_at"] is not None
+
+
+def test_cannot_start_session_twice(client):
+    token = register_and_login_session_user(
+        client,
+        "start-twice@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session_uid = create_test_session(client, token)
+
+    first_response = client.post(
+        f"/api/v1/sessions/{session_uid}/start",
+        headers=headers,
+    )
+    assert first_response.status_code == 200
+
+    second_response = client.post(
+        f"/api/v1/sessions/{session_uid}/start",
+        headers=headers,
+    )
+
+    assert second_response.status_code == 409
+
+
+def test_cannot_pause_created_session(client):
+    token = register_and_login_session_user(
+        client,
+        "pause-created@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session_uid = create_test_session(client, token)
+
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/pause",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+
+def test_stopped_session_cannot_be_resumed(client):
+    token = register_and_login_session_user(
+        client,
+        "resume-stopped@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session_uid = create_test_session(client, token)
+
+    stop_response = client.post(
+        f"/api/v1/sessions/{session_uid}/stop",
+        headers=headers,
+    )
+    assert stop_response.status_code == 200
+
+    resume_response = client.post(
+        f"/api/v1/sessions/{session_uid}/resume",
+        headers=headers,
+    )
+
+    assert resume_response.status_code == 409
+
+
+def test_other_user_cannot_control_session(client):
+    owner_token = register_and_login_session_user(
+        client,
+        "lifecycle-owner@example.com",
+    )
+    other_token = register_and_login_session_user(
+        client,
+        "lifecycle-other@example.com",
+    )
+
+    session_uid = create_test_session(client, owner_token)
+
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/start",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Session not found"

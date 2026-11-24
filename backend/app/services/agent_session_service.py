@@ -1,8 +1,9 @@
-
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models import Agent, AgentSession, User
 from app.schemas.agent_session import AgentSessionCreate
+
 
 
 def create_session(
@@ -70,3 +71,65 @@ def get_user_session_by_uid(
         )
         .first()
     )
+
+def change_session_status(
+    db: Session,
+    session_uid: str,
+    current_user: User,
+    action: str,
+) -> AgentSession:
+    """Change the lifecycle status of a session owned by the current user."""
+
+    session = get_user_session_by_uid(
+        db=db,
+        session_uid=session_uid,
+        current_user=current_user,
+    )
+
+    if session is None:
+        raise LookupError("Session not found")
+
+    allowed_transitions = {
+        "start": {
+            "from": ["created"],
+            "to": "running",
+        },
+        "pause": {
+            "from": ["running"],
+            "to": "paused",
+        },
+        "resume": {
+            "from": ["paused"],
+            "to": "running",
+        },
+        "stop": {
+            "from": ["created", "running", "paused"],
+            "to": "stopped",
+        },
+    }
+
+    transition = allowed_transitions.get(action)
+
+    if transition is None:
+        raise ValueError("Invalid session action")
+
+    if session.status not in transition["from"]:
+        raise ValueError(
+            f"Cannot {action} a session with status '{session.status}'"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    session.status = transition["to"]
+    session.last_activity_at = now
+
+    if action == "start":
+        session.started_at = now
+
+    if action == "stop":
+        session.completed_at = now
+
+    db.commit()
+    db.refresh(session)
+
+    return session

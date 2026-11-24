@@ -10,10 +10,12 @@ from app.schemas.agent_session import (
     AgentSessionResponse,
 )
 from app.services.agent_session_service import (
+    change_session_status,
     create_session,
     get_user_sessions,
     get_user_session_by_uid,
 )
+from app.services.agent_session_service import change_session_status
 
 router = APIRouter(
     prefix="/sessions",
@@ -86,3 +88,105 @@ def get_agent_session(
         )
 
     return session
+
+def _change_session_status(
+    session_uid: str,
+    action: str,
+    db: Session,
+    current_user: User,
+):
+    try:
+        return change_session_status(
+            db=db,
+            session_uid=session_uid,
+            current_user=current_user,
+            action=action,
+        )
+
+    except LookupError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        ) from error
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+
+
+@router.post(
+    "/{session_uid}/start",
+    response_model=AgentSessionResponse,
+)
+def start_agent_session(
+    session_uid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Start a created session."""
+
+    return _change_session_status(
+        session_uid=session_uid,
+        action="start",
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{session_uid}/pause",
+    response_model=AgentSessionResponse,
+)
+def pause_agent_session(
+    session_uid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Pause a running session."""
+
+    return _change_session_status(
+        session_uid=session_uid,
+        action="pause",
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{session_uid}/resume",
+    response_model=AgentSessionResponse,
+)
+def resume_agent_session(
+    session_uid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resume a paused session."""
+
+    return _change_session_status(
+        session_uid=session_uid,
+        action="resume",
+        db=db,
+        current_user=current_user,
+    )
+
+
+@router.post(
+    "/{session_uid}/stop",
+    response_model=AgentSessionResponse,
+)
+def stop_agent_session(
+    session_uid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stop a session."""
+
+    return _change_session_status(
+        session_uid=session_uid,
+        action="stop",
+        db=db,
+        current_user=current_user,
+    )
