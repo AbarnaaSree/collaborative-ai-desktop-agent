@@ -100,11 +100,19 @@ function App() {
   const [activityError, setActivityError] = useState('')
   const [monitorSessions, setMonitorSessions] =
   useState<WebsiteMonitorSession[]>([])
-const [selectedMonitorUid, setSelectedMonitorUid] = useState('')
-const [monitorHistory, setMonitorHistory] =
-  useState<WebsiteMonitorCheck[]>([])
-const [loadingMonitor, setLoadingMonitor] = useState(false)
-const [monitorError, setMonitorError] = useState('')
+  const [selectedMonitorUid, setSelectedMonitorUid] = useState('')
+  const [monitorHistory, setMonitorHistory] =
+    useState<WebsiteMonitorCheck[]>([])
+  const [loadingMonitor, setLoadingMonitor] = useState(false)
+  const [monitorError, setMonitorError] = useState('')
+  const [monitorActionLoading, setMonitorActionLoading] = useState(false)
+  const [monitorActionError, setMonitorActionError] = useState('')
+  const [monitorFormOpen, setMonitorFormOpen] = useState(false)
+  const [monitorName, setMonitorName] = useState('')
+  const [monitorUrl, setMonitorUrl] = useState('')
+  const [monitorInterval, setMonitorInterval] = useState('60')
+  const [creatingMonitor, setCreatingMonitor] = useState(false)
+  const [createMonitorError, setCreateMonitorError] = useState('')
   const [monitorRefreshKey, setMonitorRefreshKey] = useState(0)
   const [loadingAgents, setLoadingAgents] = useState(false)
   const [loadingDashboard, setLoadingDashboard] = useState(false)
@@ -127,6 +135,73 @@ const [monitorError, setMonitorError] = useState('')
     setAgents([])
     setSelectedAgentId(null)
     setDashboard(null)
+  }
+
+  async function handleCreateMonitor() {
+    if (!token) return
+
+    setCreateMonitorError('')
+
+    const trimmedName = monitorName.trim()
+    const trimmedUrl = monitorUrl.trim()
+    const interval = Number(monitorInterval)
+
+    if (!trimmedName) {
+      setCreateMonitorError('Please enter a monitor name.')
+      return
+    }
+
+    if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
+      setCreateMonitorError('Enter a valid URL starting with http:// or https://')
+      return
+    }
+
+    if (!Number.isInteger(interval) || interval < 5 || interval > 3600) {
+      setCreateMonitorError('Interval must be between 5 and 3600 seconds.')
+      return
+    }
+
+    setCreatingMonitor(true)
+
+    try {
+      const createdSession = await apiPostRequest<WebsiteMonitorSession>(
+        '/sessions',
+        token,
+        {
+          name: trimmedName,
+          agent_type: 'website_monitor',
+          task_config: {
+            url: trimmedUrl,
+            interval_seconds: interval,
+          },
+        },
+      )
+
+      const startedSession = await apiPostRequest<WebsiteMonitorSession>(
+        `/sessions/${createdSession.session_uid}/start`,
+        token,
+        {},
+      )
+
+      setMonitorSessions((current) => [
+        startedSession,
+        ...current.filter(
+          (session) => session.session_uid !== startedSession.session_uid,
+        ),
+      ])
+      setSelectedMonitorUid(startedSession.session_uid)
+      setMonitorName('')
+      setMonitorUrl('')
+      setMonitorInterval('60')
+      setMonitorFormOpen(false)
+      setMonitorRefreshKey((current) => current + 1)
+    } catch (error) {
+      setCreateMonitorError(
+        error instanceof Error ? error.message : 'Failed to create monitor.',
+      )
+    } finally {
+      setCreatingMonitor(false)
+    }
   }
 
   async function handleStopProcess() {
@@ -166,6 +241,39 @@ const [monitorError, setMonitorError] = useState('')
           ? error.message
           : 'Failed to queue stop request',
       )
+    }
+  }
+
+  async function handleMonitorAction(action: 'start' | 'stop') {
+    if (!token || !selectedMonitorUid) return
+
+    setMonitorActionError('')
+    setMonitorActionLoading(true)
+
+    try {
+      const updatedSession = await apiPostRequest<WebsiteMonitorSession>(
+        `/sessions/${selectedMonitorUid}/${action}`,
+        token,
+        {},
+      )
+
+      setMonitorSessions((current) =>
+        current.map((session) =>
+          session.session_uid === updatedSession.session_uid
+            ? updatedSession
+            : session,
+        ),
+      )
+
+      setMonitorRefreshKey((current) => current + 1)
+    } catch (error) {
+      setMonitorActionError(
+        error instanceof Error
+          ? error.message
+          : `Failed to ${action} monitor.`,
+      )
+    } finally {
+      setMonitorActionLoading(false)
     }
   }
 
@@ -590,8 +698,52 @@ const [monitorError, setMonitorError] = useState('')
                 <div>
                   <p className="eyebrow">WEBSITE MONITOR</p>
                   <h2>Monitoring history</h2>
-                </div>
+                  {monitorActionError && (
+                    <div className="login-error">{monitorActionError}</div>
+                  )}
 
+                  <div className="page-heading-actions">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => handleMonitorAction('start')}
+                      disabled={
+                        !selectedMonitorUid ||
+                        monitorActionLoading ||
+                        monitorSessions.find(
+                          (session) => session.session_uid === selectedMonitorUid,
+                        )?.status === 'running'
+                      }
+                    >
+                      {monitorActionLoading ? 'Please wait...' : 'Start Monitor'}
+                    </button>
+
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => handleMonitorAction('stop')}
+                      disabled={
+                        !selectedMonitorUid ||
+                        monitorActionLoading ||
+                        monitorSessions.find(
+                          (session) => session.session_uid === selectedMonitorUid,
+                        )?.status !== 'running'
+                      }
+                    >
+                      Stop Monitor
+                    </button>
+                  </div>
+                </div>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => {
+                    setMonitorFormOpen((current) => !current)
+                    setCreateMonitorError('')
+                  }}
+                >
+                  + Create Monitor
+                </button>
                 <select
                   aria-label="Select website monitoring session"
                   value={selectedMonitorUid}
@@ -610,7 +762,76 @@ const [monitorError, setMonitorError] = useState('')
                   ))}
                 </select>
               </div>
+              {monitorFormOpen && (
+                <form
+                  className="monitor-create-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    handleCreateMonitor()
+                  }}
+                >
+                  <h3>Create Website Monitor</h3>
 
+                  <label>
+                    Monitor name
+                    <input
+                      type="text"
+                      value={monitorName}
+                      onChange={(event) => setMonitorName(event.target.value)}
+                      placeholder="My Website Monitor"
+                      maxLength={150}
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Website URL
+                    <input
+                      type="url"
+                      value={monitorUrl}
+                      onChange={(event) => setMonitorUrl(event.target.value)}
+                      placeholder="https://example.com"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Check interval (seconds)
+                    <input
+                      type="number"
+                      value={monitorInterval}
+                      onChange={(event) => setMonitorInterval(event.target.value)}
+                      min={5}
+                      max={3600}
+                      step={1}
+                      required
+                    />
+                  </label>
+
+                  {createMonitorError && (
+                    <div className="login-error">{createMonitorError}</div>
+                  )}
+
+                  <div className="page-heading-actions">
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={creatingMonitor}
+                    >
+                      {creatingMonitor ? 'Creating...' : 'Create Monitor'}
+                    </button>
+
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => setMonitorFormOpen(false)}
+                      disabled={creatingMonitor}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
               {loadingMonitor && (
                 <p className="subtitle">Loading monitoring history...</p>
               )}
