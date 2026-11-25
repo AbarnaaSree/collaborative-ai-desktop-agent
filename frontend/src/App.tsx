@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 import Login from './Login'
-import { apiRequest } from './api'
+import { apiRequest, apiPostRequest } from './api'
 
 interface Agent {
   id: number
@@ -50,6 +50,26 @@ interface ActivityLog {
   message: string
   created_at: string
 }
+interface WebsiteMonitorSession {
+  id: number
+  session_uid: string
+  name: string
+  agent_type: string
+  status: string
+  created_at: string
+}
+
+interface WebsiteMonitorCheck {
+  id: number
+  session_id: number
+  url: string
+  is_available: boolean
+  status_code: number | null
+  response_time_ms: number | null
+  error_message: string | null
+  checked_at: string
+  created_at: string
+}
 
 function normalizeHealth(status: string): string {
   const normalized = status.toLowerCase()
@@ -78,7 +98,14 @@ function App() {
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [activityError, setActivityError] = useState('')
-
+  const [monitorSessions, setMonitorSessions] =
+  useState<WebsiteMonitorSession[]>([])
+const [selectedMonitorUid, setSelectedMonitorUid] = useState('')
+const [monitorHistory, setMonitorHistory] =
+  useState<WebsiteMonitorCheck[]>([])
+const [loadingMonitor, setLoadingMonitor] = useState(false)
+const [monitorError, setMonitorError] = useState('')
+  const [monitorRefreshKey, setMonitorRefreshKey] = useState(0)
   const [loadingAgents, setLoadingAgents] = useState(false)
   const [loadingDashboard, setLoadingDashboard] = useState(false)
   const [dashboardError, setDashboardError] = useState('')
@@ -100,6 +127,46 @@ function App() {
     setAgents([])
     setSelectedAgentId(null)
     setDashboard(null)
+  }
+
+  async function handleStopProcess() {
+    if (
+      !selectedProcess ||
+      selectedAgentId === null ||
+      selectedProcess.create_time === null
+    ) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to stop "${selectedProcess.name}" (PID ${selectedProcess.pid})?`,
+    )
+
+    if (!confirmed) return
+
+    try {
+      const result = await apiPostRequest<{ command_uid: string }>(
+        `/agents/${selectedAgentId}/commands/stop-process`,
+        token,
+        {
+          pid: selectedProcess.pid,
+          create_time: selectedProcess.create_time,
+          process_name: selectedProcess.name,
+        },
+      )
+
+      window.alert(
+        `Stop request queued successfully.\nCommand ID: ${result.command_uid}`,
+      )
+
+      setRefreshKey((current) => current + 1)
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to queue stop request',
+      )
+    }
   }
 
   // Load agents belonging to the logged-in user.
@@ -249,6 +316,111 @@ function App() {
     }
   }, [token, selectedAgentId, refreshKey])
 
+    // Load website-monitor sessions belonging to the logged-in user.
+  useEffect(() => {
+    if (!token) {
+      setMonitorSessions([])
+      setSelectedMonitorUid('')
+      setMonitorHistory([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadMonitorSessions() {
+      setLoadingMonitor(true)
+      setMonitorError('')
+
+      try {
+        const result = await apiRequest<WebsiteMonitorSession[]>(
+          '/sessions',
+          token,
+        )
+
+        if (!cancelled) {
+          const websiteSessions = result.filter(
+            (session) => session.agent_type === 'website_monitor',
+          )
+
+          setMonitorSessions(websiteSessions)
+
+          setSelectedMonitorUid((current) => {
+            const currentExists = websiteSessions.some(
+              (session) => session.session_uid === current,
+            )
+
+            return currentExists
+              ? current
+              : websiteSessions[0]?.session_uid ?? ''
+          })
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMonitorError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load website-monitor sessions',
+          )
+          setMonitorSessions([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMonitor(false)
+        }
+      }
+    }
+
+    loadMonitorSessions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  // Load history for the selected website-monitor session.
+  useEffect(() => {
+    if (!token || !selectedMonitorUid) {
+      setMonitorHistory([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadMonitorHistory() {
+      setLoadingMonitor(true)
+      setMonitorError('')
+
+      try {
+        const result = await apiRequest<WebsiteMonitorCheck[]>(
+          `/sessions/${selectedMonitorUid}/history`,
+          token,
+        )
+
+        if (!cancelled) {
+          setMonitorHistory(result)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMonitorError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load website-monitor history',
+          )
+          setMonitorHistory([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMonitor(false)
+        }
+      }
+    }
+
+    loadMonitorHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, selectedMonitorUid, monitorRefreshKey])
   const processes = dashboard?.processes ?? []
 
   const filteredProcesses = processes.filter((process) => {
@@ -303,6 +475,7 @@ function App() {
             ['Processes', '▤'],
             ['Health Monitor', '♡'],
             ['Activity Logs', '◷'],
+            ['Website Monitor', '◎'],
             ['Reports', '▥'],
           ].map(([label, icon]) => (
             <button
@@ -366,7 +539,9 @@ function App() {
               <p className="eyebrow">MONITORING CENTER</p>
               <h1>{activeNav}</h1>
               <p className="subtitle">
-                Monitor your desktop environment and application health.
+                {activeNav === 'Website Monitor'
+                  ? 'View website monitoring sessions and their check history.'
+                  : 'Monitor your desktop environment and application health.'}
               </p>
             </div>
 
@@ -391,14 +566,115 @@ function App() {
 
               <button
                 className="primary-button"
-                onClick={() => setRefreshKey((current) => current + 1)}
+                onClick={() => {
+                  if (activeNav === 'Website Monitor') {
+                    setMonitorRefreshKey((current) => current + 1)
+                  } else {
+                    setRefreshKey((current) => current + 1)
+                  }
+                }}
                 disabled={loadingDashboard}
               >
-                ↻ {loadingDashboard ? 'Refreshing...' : 'Refresh overview'}
+                ↻ {loadingDashboard
+                  ? 'Refreshing...'
+                  : activeNav === 'Website Monitor'
+                    ? 'Refresh history'
+                    : 'Refresh overview'}
               </button>
             </div>
           </section>
 
+          {activeNav === 'Website Monitor' && (
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">WEBSITE MONITOR</p>
+                  <h2>Monitoring history</h2>
+                </div>
+
+                <select
+                  aria-label="Select website monitoring session"
+                  value={selectedMonitorUid}
+                  onChange={(event) =>
+                    setSelectedMonitorUid(event.target.value)
+                  }
+                >
+                  <option value="">Select a monitoring session</option>
+                  {monitorSessions.map((session) => (
+                    <option
+                      key={session.session_uid}
+                      value={session.session_uid}
+                    >
+                      {session.name} — {session.status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {loadingMonitor && (
+                <p className="subtitle">Loading monitoring history...</p>
+              )}
+
+              {monitorError && (
+                <div className="login-error">{monitorError}</div>
+              )}
+
+              {!loadingMonitor &&
+                !monitorError &&
+                monitorSessions.length === 0 && (
+                  <p className="subtitle">
+                    No website monitoring sessions found.
+                  </p>
+                )}
+
+              {!loadingMonitor &&
+                !monitorError &&
+                selectedMonitorUid &&
+                monitorHistory.length === 0 && (
+                  <p className="subtitle">
+                    No website checks have been recorded for this session yet.
+                  </p>
+                )}
+
+              {monitorHistory.length > 0 && (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Website</th>
+                        <th>Result</th>
+                        <th>HTTP</th>
+                        <th>Response time</th>
+                        <th>Checked at</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {monitorHistory.map((check) => (
+                        <tr key={check.id}>
+                          <td>{check.url}</td>
+                          <td>
+                            {check.is_available ? 'Available' : 'Unavailable'}
+                          </td>
+                          <td>{check.status_code ?? '—'}</td>
+                          <td>
+                            {check.response_time_ms != null
+                              ? `${check.response_time_ms} ms`
+                              : '—'}
+                          </td>
+                          <td>
+                            {new Date(check.checked_at).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
+        {activeNav !== 'Website Monitor' && (
+          <>
           {dashboardError && (
             <div className="login-error">
               {dashboardError}
@@ -647,6 +923,15 @@ function App() {
                         : 'No health issues reported.'}
                     </p>
                   </div>
+                  <div className="process-actions">
+                    <button
+                      className="text-button"
+                      onClick={handleStopProcess}
+                      disabled={selectedProcess.create_time === null}
+                    >
+                      Stop Process
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -739,6 +1024,8 @@ function App() {
                 : 'Waiting for agent metrics'}
             </span>
           </footer>
+          </>
+        )}
         </div>
       </main>
     </div>

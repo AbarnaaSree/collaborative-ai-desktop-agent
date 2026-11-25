@@ -42,3 +42,24 @@ export async function apiRequest<T>(
 
   return response.json()
 }
+export async function apiPostRequest<T>(
+  path: string,
+  token: string,
+  body: unknown,
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => null)
+    throw new Error(error?.detail || 'API request failed')
+  }
+
+  return response.json()
+}
