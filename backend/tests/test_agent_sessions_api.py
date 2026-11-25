@@ -10,7 +10,7 @@ from app.core.database import Base, get_db
 from app.services import session_runner
 from datetime import datetime, timezone
 
-from app.models import AgentSession
+from app.models import AgentSession, WebsiteMonitorCheck
 from app.api import agent_sessions as agent_sessions_api
 
 @pytest.fixture
@@ -364,6 +364,7 @@ def test_other_user_cannot_control_session(client):
     assert response.status_code == 404
     assert response.json()["detail"] == "Session not found"
 
+
 def test_website_monitor_session_saves_result(client, monkeypatch):
     token = register_and_login_session_user(
         client,
@@ -383,11 +384,11 @@ def test_website_monitor_session_saves_result(client, monkeypatch):
     assert create_response.status_code == 201
 
     session_uid = create_response.json()["session_uid"]
+
     start_response = client.post(
         f"/api/v1/sessions/{session_uid}/start",
         headers=headers,
     )
-
     assert start_response.status_code == 200
 
     async def fake_check_website(url):
@@ -406,7 +407,11 @@ def test_website_monitor_session_saves_result(client, monkeypatch):
         fake_check_website,
     )
 
-    session_runner.execute_session(session_uid)
+    saved = session_runner.execute_website_monitor_check(
+        session_uid,
+        "https://example.com",
+    )
+    assert saved is True
 
     response = client.get(
         f"/api/v1/sessions/{session_uid}",
@@ -416,10 +421,60 @@ def test_website_monitor_session_saves_result(client, monkeypatch):
     assert response.status_code == 200
 
     data = response.json()
-    assert data["status"] == "completed"
+    assert data["status"] == "running"
     assert data["result"]["url"] == "https://example.com"
     assert data["result"]["is_available"] is True
     assert data["result"]["status_code"] == 200
     assert data["result"]["response_time_ms"] == 123.45
     assert data["result"]["checked_at"] is not None
-    assert data["completed_at"] is not None
+    assert data["completed_at"] is None
+
+    db = session_runner.SessionLocal()
+
+    try:
+        history = (
+            db.query(WebsiteMonitorCheck)
+            .filter(
+                WebsiteMonitorCheck.session_id
+                == data["id"]
+            )
+            .all()
+        )
+
+        assert len(history) == 1
+        assert history[0].url == "https://example.com"
+        assert history[0].is_available is True
+        assert history[0].status_code == 200
+        assert history[0].response_time_ms == 123.45
+        assert history[0].error_message is None
+    finally:
+        db.close()
+
+
+
+@pytest.mark.parametrize(
+    ("config", "expected"),
+    [
+        ({}, 60),
+        ({"interval_seconds": 5}, 5),
+        ({"interval_seconds": 60}, 60),
+        ({"interval_seconds": 3600}, 3600),
+    ],
+)
+def test_get_monitor_interval_valid(config, expected):
+    assert session_runner.get_monitor_interval(config) == expected
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"interval_seconds": 4},
+        {"interval_seconds": 3601},
+        {"interval_seconds": 1.5},
+        {"interval_seconds": "60"},
+        {"interval_seconds": True},
+    ],
+)
+def test_get_monitor_interval_invalid(config):
+    with pytest.raises(ValueError):
+        session_runner.get_monitor_interval(config)

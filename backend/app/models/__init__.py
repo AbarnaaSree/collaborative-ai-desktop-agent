@@ -8,6 +8,7 @@ from app.models.agent_process import AgentProcess
 from app.models.agent_command import AgentCommand
 from app.models.activity_log import ActivityLog
 from app.models.agent_session import AgentSession
+from app.models.website_monitor_check import WebsiteMonitorCheck
 
 __all__ = [
     "User",
@@ -20,4 +21,5 @@ __all__ = [
     "AgentProcess",
     "AgentCommand",
     "ActivityLog",
+    "WebsiteMonitorCheck",
 ]
