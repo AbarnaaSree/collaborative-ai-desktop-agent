@@ -16,6 +16,8 @@ from app.services.agent_session_service import (
     get_user_session_by_uid,
 )
 from app.services.session_runner import execute_session
+from app.models import User, WebsiteMonitorCheck
+from app.schemas.agent_session import WebsiteMonitorCheckResponse
 
 router = APIRouter(
     prefix="/sessions",
@@ -88,6 +90,45 @@ def get_agent_session(
         )
 
     return session
+
+@router.get(
+    "/{session_uid}/history",
+    response_model=list[WebsiteMonitorCheckResponse],
+)
+def get_website_monitor_history(
+    session_uid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get check history for a website-monitor session."""
+
+    session = get_user_session_by_uid(
+        db=db,
+        session_uid=session_uid,
+        current_user=current_user,
+    )
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+
+    if session.agent_type != "website_monitor":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="History is only available for website-monitor sessions",
+        )
+
+    return (
+        db.query(WebsiteMonitorCheck)
+        .filter(WebsiteMonitorCheck.session_id == session.id)
+        .order_by(
+            WebsiteMonitorCheck.checked_at.desc(),
+            WebsiteMonitorCheck.id.desc(),
+        )
+        .all()
+    )
 
 def _change_session_status(
     session_uid: str,

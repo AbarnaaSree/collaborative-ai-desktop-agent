@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.core.database import Base, get_db
 from app.services import session_runner
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.models import AgentSession, WebsiteMonitorCheck
 from app.api import agent_sessions as agent_sessions_api
@@ -478,3 +478,108 @@ def test_get_monitor_interval_valid(config, expected):
 def test_get_monitor_interval_invalid(config):
     with pytest.raises(ValueError):
         session_runner.get_monitor_interval(config)
+
+def test_get_website_monitor_history_returns_newest_first(client):
+    token = register_and_login_session_user(
+        client,
+        "history-test@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = client.post(
+        "/api/v1/sessions",
+        headers=headers,
+        json={
+            "name": "History Test",
+            "agent_type": "website_monitor",
+            "task_config": {"url": "https://example.com"},
+        },
+    )
+    assert create_response.status_code == 201
+
+    session_uid = create_response.json()["session_uid"]
+    session_id = create_response.json()["id"]
+
+    first_time = datetime.now(timezone.utc)
+    second_time = first_time.replace(
+        microsecond=0
+    ) + timedelta(seconds=10)
+
+    db = session_runner.SessionLocal()
+
+    try:
+        db.add_all(
+            [
+                WebsiteMonitorCheck(
+                    session_id=session_id,
+                    url="https://example.com",
+                    is_available=True,
+                    status_code=200,
+                    response_time_ms=120.0,
+                    error_message=None,
+                    checked_at=first_time,
+                ),
+                WebsiteMonitorCheck(
+                    session_id=session_id,
+                    url="https://example.com",
+                    is_available=False,
+                    status_code=503,
+                    response_time_ms=250.0,
+                    error_message="Website returned 503",
+                    checked_at=second_time,
+                ),
+            ]
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get(
+        f"/api/v1/sessions/{session_uid}/history",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    history = response.json()
+
+    assert len(history) == 2
+    assert history[0]["status_code"] == 503
+    assert history[0]["is_available"] is False
+    assert history[1]["status_code"] == 200
+    assert history[1]["is_available"] is True
+
+def test_other_user_cannot_access_website_monitor_history(client):
+    owner_token = register_and_login_session_user(
+        client,
+        "history-owner@example.com",
+    )
+    other_token = register_and_login_session_user(
+        client,
+        "history-other@example.com",
+    )
+
+    create_response = client.post(
+        "/api/v1/sessions",
+        headers={
+            "Authorization": f"Bearer {owner_token}",
+        },
+        json={
+            "name": "Private History",
+            "agent_type": "website_monitor",
+            "task_config": {"url": "https://example.com"},
+        },
+    )
+    assert create_response.status_code == 201
+
+    session_uid = create_response.json()["session_uid"]
+
+    response = client.get(
+        f"/api/v1/sessions/{session_uid}/history",
+        headers={
+            "Authorization": f"Bearer {other_token}",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Session not found"

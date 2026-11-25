@@ -31,3 +31,18 @@ class AgentSessionResponse(BaseModel):
     started_at: datetime | None
     last_activity_at: datetime | None
     completed_at: datetime | None
+
+class WebsiteMonitorCheckResponse(BaseModel):
+    """Response schema for an individual website monitor check."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int
+    url: str
+    is_available: bool
+    status_code: int | None
+    response_time_ms: float | None
+    error_message: str | None
+    checked_at: datetime
+    created_at: datetime
