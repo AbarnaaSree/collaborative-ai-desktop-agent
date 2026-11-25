@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -15,7 +15,7 @@ from app.services.agent_session_service import (
     get_user_sessions,
     get_user_session_by_uid,
 )
-from app.services.agent_session_service import change_session_status
+from app.services.session_runner import execute_session
 
 router = APIRouter(
     prefix="/sessions",
@@ -122,17 +122,25 @@ def _change_session_status(
 )
 def start_agent_session(
     session_uid: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Start a created session."""
+    """Start and execute a session in the background."""
 
-    return _change_session_status(
+    session = _change_session_status(
         session_uid=session_uid,
         action="start",
         db=db,
         current_user=current_user,
     )
+
+    background_tasks.add_task(
+        execute_session,
+        session_uid,
+    )
+
+    return session
 
 
 @router.post(

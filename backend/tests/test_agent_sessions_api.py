@@ -7,9 +7,14 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import Base, get_db
+from app.services import session_runner
+from datetime import datetime, timezone
+
+from app.models import AgentSession
+from app.api import agent_sessions as agent_sessions_api
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     """Create an isolated database and API test client."""
 
     engine = create_engine(
@@ -24,6 +29,16 @@ def client():
         bind=engine,
         autoflush=False,
         autocommit=False,
+    )
+    monkeypatch.setattr(
+        session_runner,
+        "SessionLocal",
+        TestingSessionLocal,
+    )
+    monkeypatch.setattr(
+        agent_sessions_api,
+        "execute_session",
+        lambda session_uid: None,
     )
 
     def override_get_db():
@@ -348,3 +363,63 @@ def test_other_user_cannot_control_session(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Session not found"
+
+def test_website_monitor_session_saves_result(client, monkeypatch):
+    token = register_and_login_session_user(
+        client,
+        "runner-test@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = client.post(
+        "/api/v1/sessions",
+        headers=headers,
+        json={
+            "name": "Runner Website Test",
+            "agent_type": "website_monitor",
+            "task_config": {"url": "https://example.com"},
+        },
+    )
+    assert create_response.status_code == 201
+
+    session_uid = create_response.json()["session_uid"]
+    start_response = client.post(
+        f"/api/v1/sessions/{session_uid}/start",
+        headers=headers,
+    )
+
+    assert start_response.status_code == 200
+
+    async def fake_check_website(url):
+        return {
+            "url": url,
+            "is_available": True,
+            "status_code": 200,
+            "response_time_ms": 123.45,
+            "error_message": None,
+            "checked_at": datetime.now(timezone.utc),
+        }
+
+    monkeypatch.setattr(
+        session_runner,
+        "check_website",
+        fake_check_website,
+    )
+
+    session_runner.execute_session(session_uid)
+
+    response = client.get(
+        f"/api/v1/sessions/{session_uid}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["status"] == "completed"
+    assert data["result"]["url"] == "https://example.com"
+    assert data["result"]["is_available"] is True
+    assert data["result"]["status_code"] == 200
+    assert data["result"]["response_time_ms"] == 123.45
+    assert data["result"]["checked_at"] is not None
+    assert data["completed_at"] is not None

@@ -42,6 +42,11 @@ class AgentSession(Base):
         nullable=False,
     )
 
+    result: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,

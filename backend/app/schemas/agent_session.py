@@ -23,6 +23,7 @@ class AgentSessionResponse(BaseModel):
     name: str
     agent_type: str
     task_config: dict
+    result: dict | None
     owner_id: int
     agent_id: int | None
     status: str
