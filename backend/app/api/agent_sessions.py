@@ -1,10 +1,9 @@
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
-from app.models import User
 from app.schemas.agent_session import (
     AgentSessionCreate,
     AgentSessionResponse,
@@ -15,7 +14,7 @@ from app.services.agent_session_service import (
     get_user_sessions,
     get_user_session_by_uid,
 )
-from app.services.session_runner import execute_session
+from app.services.session_worker_manager import session_worker_manager
 from app.models import User, WebsiteMonitorCheck
 from app.schemas.agent_session import WebsiteMonitorCheckResponse
 
@@ -163,7 +162,6 @@ def _change_session_status(
 )
 def start_agent_session(
     session_uid: str,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -176,10 +174,7 @@ def start_agent_session(
         current_user=current_user,
     )
 
-    background_tasks.add_task(
-        execute_session,
-        session_uid,
-    )
+    session_worker_manager.start(session_uid)
 
     return session
 
@@ -233,9 +228,13 @@ def stop_agent_session(
 ):
     """Stop a session."""
 
-    return _change_session_status(
+    session = _change_session_status(
         session_uid=session_uid,
         action="stop",
         db=db,
         current_user=current_user,
     )
+
+    session_worker_manager.stop(session_uid)
+
+    return session

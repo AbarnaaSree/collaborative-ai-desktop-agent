@@ -36,8 +36,13 @@ def client(monkeypatch):
         TestingSessionLocal,
     )
     monkeypatch.setattr(
-        agent_sessions_api,
-        "execute_session",
+        agent_sessions_api.session_worker_manager,
+        "start",
+        lambda session_uid: None,
+    )
+    monkeypatch.setattr(
+        agent_sessions_api.session_worker_manager,
+        "stop",
         lambda session_uid: None,
     )
 
