@@ -196,6 +196,8 @@ def execute_session(
         wait_started = time.monotonic()
 
         while time.monotonic() - wait_started < interval:
+            if stop_event is not None and stop_event.is_set():
+                return
             status = get_session_status(session_uid)
 
             if status is None or status in {
