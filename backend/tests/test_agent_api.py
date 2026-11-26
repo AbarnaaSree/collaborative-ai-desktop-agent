@@ -2002,3 +2002,20 @@ def test_team_member_can_list_members_but_nonmember_is_denied(client):
         headers=outsider_headers,
     )
     assert denied_response.status_code == 403
+
+
+def test_create_team_rejects_whitespace_only_name(client):
+    """Reject team names that contain only whitespace."""
+
+    token, _ = register_and_login(
+        client,
+        "whitespace-team-name@example.com",
+    )
+
+    response = client.post(
+        "/api/v1/teams",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "   "},
+    )
+
+    assert response.status_code == 422

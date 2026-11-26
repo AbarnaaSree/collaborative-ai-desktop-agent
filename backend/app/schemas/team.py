@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 TeamRole = Literal["owner", "admin", "member"]
@@ -11,6 +11,16 @@ class TeamCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=150)
     description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_team_name(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Team name cannot be empty")
+
+        return value
 
 
 class TeamMemberAddRequest(BaseModel):
