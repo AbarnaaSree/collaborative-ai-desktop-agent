@@ -91,7 +91,7 @@ def change_session_status(
 
     allowed_transitions = {
         "start": {
-            "from": ["created", "stopped"],
+            "from": ["created", "stopped", "failed"],
             "to": "running",
         },
         "pause": {

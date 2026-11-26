@@ -621,3 +621,43 @@ def test_other_user_cannot_access_website_monitor_history(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Session not found"
+
+def test_failed_session_can_be_restarted(client):
+    token = register_and_login_session_user(
+        client,
+        "restart-failed@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session_uid = create_test_session(
+        client,
+        token,
+        name="Restart Failed Session",
+    )
+
+    # Simulate a session that previously failed.
+    db = session_runner.SessionLocal()
+
+    try:
+        session = (
+            db.query(AgentSession)
+            .filter(AgentSession.session_uid == session_uid)
+            .first()
+        )
+
+        session.status = "failed"
+        session.completed_at = datetime.now(timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+
+    # Restart: failed -> running
+    response = client.post(
+        f"/api/v1/sessions/{session_uid}/start",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "running"
+    assert response.json()["started_at"] is not None
+    assert response.json()["completed_at"] is None
