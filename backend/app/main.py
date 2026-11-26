@@ -12,6 +12,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.agent_sessions import router as agent_sessions_router
 from app.api.capabilities import router as capabilities_router
 from app.api.website_monitor import router as website_monitor_router
+from app.api.teams import router as teams_router
 from app.services.session_runner import (
     get_running_website_monitor_sessions,
 )
@@ -81,6 +82,7 @@ app.include_router(
 )
 
 app.include_router(capabilities_router, prefix="/api/v1")
+app.include_router(teams_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])

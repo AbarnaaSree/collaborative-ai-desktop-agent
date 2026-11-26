@@ -1666,3 +1666,288 @@ def test_dashboard_team_member_can_view_shared_agent_api(client):
         agent["id"] != agent_id
         for agent in outsider_response.json()
     )
+def test_user_can_create_and_list_team(client):
+    """A user can create a team and see it in their team list."""
+
+    token, user_id = register_and_login(
+        client,
+        "team-owner@example.com",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = client.post(
+        "/api/v1/teams",
+        headers=headers,
+        json={
+            "name": "Development Team",
+            "description": "Team API test",
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    created_team = create_response.json()
+    assert created_team["name"] == "Development Team"
+    assert created_team["created_by"] == user_id
+    assert len(created_team["members"]) == 1
+    assert created_team["members"][0]["user_id"] == user_id
+    assert created_team["members"][0]["role"] == "owner"
+
+    list_response = client.get(
+        "/api/v1/teams",
+        headers=headers,
+    )
+
+    assert list_response.status_code == 200
+
+    teams = list_response.json()
+    assert len(teams) == 1
+    assert teams[0]["id"] == created_team["id"]
+
+def test_team_owner_can_manage_team_members(client):
+    """Team owner can add, update, and remove a team member."""
+
+    owner_token, owner_id = register_and_login(
+        client,
+        "team-manager@example.com",
+    )
+    member_token, member_id = register_and_login(
+        client,
+        "team-member@example.com",
+    )
+
+    owner_headers = {
+        "Authorization": f"Bearer {owner_token}",
+    }
+
+    create_response = client.post(
+        "/api/v1/teams",
+        headers=owner_headers,
+        json={"name": "Member Management Team"},
+    )
+
+    assert create_response.status_code == 201
+    team_id = create_response.json()["id"]
+
+    add_response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        headers=owner_headers,
+        json={
+            "user_id": member_id,
+            "role": "member",
+        },
+    )
+
+    assert add_response.status_code == 201
+    assert add_response.json()["role"] == "member"
+
+    update_response = client.patch(
+        f"/api/v1/teams/{team_id}/members/{member_id}",
+        headers=owner_headers,
+        json={"role": "admin"},
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["role"] == "admin"
+
+    delete_response = client.delete(
+        f"/api/v1/teams/{team_id}/members/{member_id}",
+        headers=owner_headers,
+    )
+
+    assert delete_response.status_code == 200
+
+    list_response = client.get(
+        "/api/v1/teams",
+        headers=owner_headers,
+    )
+
+    assert list_response.status_code == 200
+    assert len(list_response.json()[0]["members"]) == 1
+    assert list_response.json()[0]["members"][0]["user_id"] == owner_id
+
+def test_team_member_cannot_add_another_member(client):
+    owner_token, owner_id = register_and_login(
+        client, "permission-owner@example.com"
+    )
+    member_token, member_id = register_and_login(
+        client, "permission-member@example.com"
+    )
+    new_user_token, new_user_id = register_and_login(
+        client, "permission-new@example.com"
+    )
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    member_headers = {"Authorization": f"Bearer {member_token}"}
+
+    team_response = client.post(
+        "/api/v1/teams",
+        json={"name": "Permission Test Team"},
+        headers=owner_headers,
+    )
+    assert team_response.status_code == 201
+    team_id = team_response.json()["id"]
+
+    add_member_response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": member_id, "role": "member"},
+        headers=owner_headers,
+    )
+    assert add_member_response.status_code == 201
+
+    denied_response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": new_user_id, "role": "member"},
+        headers=member_headers,
+    )
+
+    assert denied_response.status_code == 403
+
+def test_team_admin_cannot_change_member_role(client):
+    owner_token, owner_id = register_and_login(
+        client, "role-owner@example.com"
+    )
+    admin_token, admin_id = register_and_login(
+        client, "role-admin@example.com"
+    )
+    member_token, member_id = register_and_login(
+        client, "role-member@example.com"
+    )
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    team_response = client.post(
+        "/api/v1/teams",
+        json={"name": "Admin Role Test Team"},
+        headers=owner_headers,
+    )
+    assert team_response.status_code == 201
+    team_id = team_response.json()["id"]
+
+    # Owner adds the admin.
+    response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": admin_id, "role": "admin"},
+        headers=owner_headers,
+    )
+    assert response.status_code == 201
+
+    # Owner adds an ordinary member.
+    response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": member_id, "role": "member"},
+        headers=owner_headers,
+    )
+    assert response.status_code == 201
+
+    # Admin tries to promote the member to admin.
+    denied_response = client.patch(
+        f"/api/v1/teams/{team_id}/members/{member_id}",
+        json={"role": "admin"},
+        headers=admin_headers,
+    )
+
+    assert denied_response.status_code == 403
+
+def test_team_admin_cannot_add_another_admin(client):
+    owner_token, owner_id = register_and_login(
+        client, "add-admin-owner@example.com"
+    )
+    admin_token, admin_id = register_and_login(
+        client, "add-admin-admin@example.com"
+    )
+    new_user_token, new_user_id = register_and_login(
+        client, "add-admin-new@example.com"
+    )
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    team_response = client.post(
+        "/api/v1/teams",
+        json={"name": "Admin Add Test Team"},
+        headers=owner_headers,
+    )
+    assert team_response.status_code == 201
+    team_id = team_response.json()["id"]
+
+    response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": admin_id, "role": "admin"},
+        headers=owner_headers,
+    )
+    assert response.status_code == 201
+
+    denied_response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": new_user_id, "role": "admin"},
+        headers=admin_headers,
+    )
+
+    assert denied_response.status_code == 403
+
+def test_team_admin_cannot_remove_another_admin(client):
+    owner_token, owner_id = register_and_login(
+        client, "remove-admin-owner@example.com"
+    )
+    admin_token, admin_id = register_and_login(
+        client, "remove-admin-admin@example.com"
+    )
+    another_admin_token, another_admin_id = register_and_login(
+        client, "remove-admin-target@example.com"
+    )
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    team_response = client.post(
+        "/api/v1/teams",
+        json={"name": "Admin Remove Test Team"},
+        headers=owner_headers,
+    )
+    assert team_response.status_code == 201
+    team_id = team_response.json()["id"]
+
+    response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": admin_id, "role": "admin"},
+        headers=owner_headers,
+    )
+    assert response.status_code == 201
+
+    response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": another_admin_id, "role": "admin"},
+        headers=owner_headers,
+    )
+    assert response.status_code == 201
+
+    denied_response = client.delete(
+        f"/api/v1/teams/{team_id}/members/{another_admin_id}",
+        headers=admin_headers,
+    )
+
+    assert denied_response.status_code == 403
+
+def test_team_owner_cannot_remove_themselves(client):
+    owner_token, owner_id = register_and_login(
+        client, "self-remove-owner@example.com"
+    )
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+    team_response = client.post(
+        "/api/v1/teams",
+        json={"name": "Owner Self Remove Test"},
+        headers=owner_headers,
+    )
+    assert team_response.status_code == 201
+    team_id = team_response.json()["id"]
+
+    denied_response = client.delete(
+        f"/api/v1/teams/{team_id}/members/{owner_id}",
+        headers=owner_headers,
+    )
+
+    assert denied_response.status_code == 400
