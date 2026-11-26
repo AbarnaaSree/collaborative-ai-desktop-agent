@@ -850,6 +850,64 @@ def test_user_cannot_rotate_another_users_agent_token(client):
 
     assert response.status_code == 404
 
+def test_team_member_cannot_rotate_shared_agent_token(client):
+    """Team members can access shared agents but cannot rotate their tokens."""
+
+    owner_token, owner_id = register_and_login(
+        client,
+        "shared-token-owner@example.com",
+    )
+
+    member_token, member_id = register_and_login(
+        client,
+        "shared-token-member@example.com",
+    )
+
+    team_id = create_team_membership(
+        creator_id=owner_id,
+        member_id=owner_id,
+        team_name="Shared Token Team",
+    )
+
+    # Add the teammate to the owner's team.
+    db_generator = app.dependency_overrides[get_db]()
+    db = next(db_generator)
+
+    try:
+        db.add(
+            TeamMember(
+                team_id=team_id,
+                user_id=member_id,
+                role="member",
+            )
+        )
+        db.commit()
+    finally:
+        db_generator.close()
+
+    # Register an agent shared with the team.
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Shared Token Agent",
+            "hostname": "SHARED-TOKEN-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+            "team_id": team_id,
+        },
+    )
+
+    assert registration.status_code == 201
+    agent_id = registration.json()["id"]
+
+    # A teammate must not be allowed to rotate the owner's agent token.
+    response = client.post(
+        f"/api/v1/agents/{agent_id}/rotate-token",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+
+    assert response.status_code == 404
 
 def test_rotate_agent_token_requires_authentication(client):
     """Reject token rotation without user authentication."""
