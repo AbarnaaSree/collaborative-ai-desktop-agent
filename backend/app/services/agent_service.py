@@ -1,7 +1,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from app.core.security import (
@@ -123,12 +123,21 @@ def get_user_agents(
     db: Session,
     user_id: int,
 ) -> list[Agent]:
-    """Retrieve agents registered by one platform user."""
+    """Retrieve agents owned by the user or shared with their teams."""
+
+    user_team_ids = select(TeamMember.team_id).where(
+        TeamMember.user_id == user_id
+    )
 
     return list(
         db.scalars(
             select(Agent)
-            .where(Agent.registered_by == user_id)
+            .where(
+                or_(
+                    Agent.registered_by == user_id,
+                    Agent.team_id.in_(user_team_ids),
+                )
+            )
             .order_by(Agent.created_at.desc())
         ).all()
     )

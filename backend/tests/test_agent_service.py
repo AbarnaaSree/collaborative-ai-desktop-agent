@@ -12,6 +12,7 @@ from app.services.agent_service import (
     mark_stale_agents_offline,
     record_agent_heartbeat,
     register_agent,
+    get_user_agents,
 )
 from datetime import datetime, timedelta, timezone
 
@@ -285,3 +286,53 @@ def test_mark_stale_agents_offline(db_session):
     assert stale_agent.status == "offline"
     assert active_agent.status == "online"
     assert new_agent.status == "offline"
+
+def test_get_user_agents_includes_team_agents_for_members(db_session):
+    """Team members can see shared agents, but outsiders cannot."""
+
+    owner = create_test_user(db_session, "team-owner@example.com")
+    member = create_test_user(db_session, "team-member@example.com")
+    outsider = create_test_user(db_session, "team-outsider@example.com")
+
+    team = Team(
+        name="Shared Agent Team",
+        description="Team visibility test",
+        created_by=owner.id,
+    )
+    db_session.add(team)
+    db_session.commit()
+    db_session.refresh(team)
+
+    db_session.add_all([
+        TeamMember(
+            team_id=team.id,
+            user_id=owner.id,
+            role="owner",
+        ),
+        TeamMember(
+            team_id=team.id,
+            user_id=member.id,
+            role="member",
+        ),
+    ])
+    db_session.commit()
+
+    agent_data = AgentRegistrationRequest(
+        name="Shared Desktop",
+        hostname="SHARED-PC",
+        operating_system="Windows 11",
+        agent_version="1.0.0",
+        team_id=team.id,
+    )
+
+    agent, _ = register_agent(
+        db_session,
+        agent_data,
+        registered_by=owner.id,
+    )
+
+    member_agents = get_user_agents(db_session, member.id)
+    outsider_agents = get_user_agents(db_session, outsider.id)
+
+    assert any(item.id == agent.id for item in member_agents)
+    assert all(item.id != agent.id for item in outsider_agents)

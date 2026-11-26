@@ -1588,3 +1588,81 @@ def test_metrics_activity_is_throttled(client):
     ]
 
     assert len(metrics_activities) == 1
+
+def test_dashboard_team_member_can_view_shared_agent_api(client):
+    """Team members can view shared agents; outsiders cannot."""
+
+    owner_token, owner_id = register_and_login(
+        client,
+        "dashboard-owner@example.com",
+    )
+    member_token, member_id = register_and_login(
+        client,
+        "dashboard-member@example.com",
+    )
+    outsider_token, _ = register_and_login(
+        client,
+        "dashboard-outsider@example.com",
+    )
+
+    team_id = create_team_membership(
+        creator_id=owner_id,
+        member_id=owner_id,
+        team_name="Dashboard Shared Team",
+    )
+
+    # Add the teammate to the owner's team.
+    db_generator = app.dependency_overrides[get_db]()
+    db = next(db_generator)
+
+    try:
+        db.add(
+            TeamMember(
+                team_id=team_id,
+                user_id=member_id,
+                role="member",
+            )
+        )
+        db.commit()
+    finally:
+        db_generator.close()
+
+    # Register an agent shared with the team.
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Shared Dashboard Agent",
+            "hostname": "SHARED-DASHBOARD-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+            "team_id": team_id,
+        },
+    )
+
+    assert registration.status_code == 201
+    agent_id = registration.json()["id"]
+
+    # Team member should see the shared agent.
+    member_response = client.get(
+        "/api/v1/dashboard/agents",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+
+    assert member_response.status_code == 200
+    assert any(
+        agent["id"] == agent_id
+        for agent in member_response.json()
+    )
+
+    # Outsider should not see the shared agent.
+    outsider_response = client.get(
+        "/api/v1/dashboard/agents",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+    )
+
+    assert outsider_response.status_code == 200
+    assert all(
+        agent["id"] != agent_id
+        for agent in outsider_response.json()
+    )
