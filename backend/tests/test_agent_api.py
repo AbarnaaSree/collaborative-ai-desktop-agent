@@ -1951,3 +1951,54 @@ def test_team_owner_cannot_remove_themselves(client):
     )
 
     assert denied_response.status_code == 400
+
+def test_team_member_can_list_members_but_nonmember_is_denied(client):
+    owner_token, owner_id = register_and_login(
+        client, "list-team-owner@example.com"
+    )
+    member_token, member_id = register_and_login(
+        client, "list-team-member@example.com"
+    )
+    outsider_token, outsider_id = register_and_login(
+        client, "list-team-outsider@example.com"
+    )
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    member_headers = {"Authorization": f"Bearer {member_token}"}
+    outsider_headers = {"Authorization": f"Bearer {outsider_token}"}
+
+    team_response = client.post(
+        "/api/v1/teams",
+        json={"name": "Member Listing Test Team"},
+        headers=owner_headers,
+    )
+    assert team_response.status_code == 201
+    team_id = team_response.json()["id"]
+
+    add_response = client.post(
+        f"/api/v1/teams/{team_id}/members",
+        json={"user_id": member_id, "role": "member"},
+        headers=owner_headers,
+    )
+    assert add_response.status_code == 201
+
+    # A team member can view the member list.
+    list_response = client.get(
+        f"/api/v1/teams/{team_id}/members",
+        headers=member_headers,
+    )
+    assert list_response.status_code == 200
+
+    listed_user_ids = {
+        item["user_id"] for item in list_response.json()
+    }
+    assert owner_id in listed_user_ids
+    assert member_id in listed_user_ids
+    assert outsider_id not in listed_user_ids
+
+    # A nonmember cannot view the team member list.
+    denied_response = client.get(
+        f"/api/v1/teams/{team_id}/members",
+        headers=outsider_headers,
+    )
+    assert denied_response.status_code == 403

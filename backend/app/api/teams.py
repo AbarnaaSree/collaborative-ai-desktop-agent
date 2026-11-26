@@ -251,3 +251,43 @@ def remove_member_from_team(
         ) from exc
 
     return {"message": "Team member removed"}
+
+@router.get("/{team_id}/members", response_model=list[TeamMemberResponse])
+def list_team_members(
+    team_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List members of a team if the current user belongs to it."""
+
+    team = db.get(Team, team_id)
+
+    if not team:
+        raise HTTPException(
+            status_code=404,
+            detail="Team not found",
+        )
+
+    membership = get_team_membership(
+        db,
+        team_id,
+        current_user.id,
+    )
+
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this team",
+        )
+
+    members = get_team_members(db, team_id)
+
+    return [
+        TeamMemberResponse(
+            user_id=member.user_id,
+            email=user.email,
+            full_name=user.full_name,
+            role=member.role,
+        )
+        for member, user in members
+    ]
