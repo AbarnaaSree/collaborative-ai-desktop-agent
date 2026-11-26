@@ -236,6 +236,39 @@ def create_test_session(client, token, name="Lifecycle Test Session"):
     assert response.status_code == 201
     return response.json()["session_uid"]
 
+def test_get_running_website_monitor_sessions(client):
+    token = register_and_login_session_user(
+        client,
+        "recovery-test@example.com",
+    )
+
+    running_uid = create_test_session(
+        client,
+        token,
+        name="Running Monitor",
+    )
+
+    created_uid = create_test_session(
+        client,
+        token,
+        name="Created Monitor",
+    )
+
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post(
+        f"/api/v1/sessions/{running_uid}/start",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    running_sessions = (
+        session_runner.get_running_website_monitor_sessions()
+    )
+
+    assert running_uid in running_sessions
+    assert created_uid not in running_sessions
 
 def test_agent_session_lifecycle(client):
     token = register_and_login_session_user(

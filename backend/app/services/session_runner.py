@@ -3,10 +3,12 @@ import asyncio
 import time
 from datetime import datetime, timezone
 
+from sqlalchemy import inspect
+
 from app.core.database import SessionLocal
 from app.models import AgentSession, WebsiteMonitorCheck
 from app.services.website_monitor_service import check_website
-
+from threading import Event
 
 def get_monitor_interval(task_config: dict) -> int:
     """Return a validated website-monitor interval in seconds."""
@@ -123,7 +125,10 @@ def mark_session_failed(
         db.close()
 
 
-def execute_session(session_uid: str) -> None:
+def execute_session(
+    session_uid: str,
+    stop_event: Event | None = None,
+) -> None:
     """Continuously monitor a website until the session is stopped."""
 
     db = SessionLocal()
@@ -164,6 +169,8 @@ def execute_session(session_uid: str) -> None:
         db.close()
 
     while True:
+        if stop_event is not None and stop_event.is_set():
+            return
         status = get_session_status(session_uid)
 
         if status is None or status in {
@@ -202,3 +209,24 @@ def execute_session(session_uid: str) -> None:
                 break
 
             time.sleep(1)
+
+def get_running_website_monitor_sessions() -> list[str]:
+    """Return session UIDs for website monitors that are currently running."""
+
+    db = SessionLocal()
+
+    try:
+        if not inspect(db.get_bind()).has_table("agent_sessions"):
+            return []
+        sessions = (
+            db.query(AgentSession.session_uid)
+            .filter(
+                AgentSession.status == "running",
+                AgentSession.agent_type == "website_monitor",
+            )
+            .all()
+        )
+
+        return [session_uid for (session_uid,) in sessions]
+    finally:
+        db.close()

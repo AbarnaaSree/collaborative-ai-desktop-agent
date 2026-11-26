@@ -12,22 +12,56 @@ from app.api.dashboard import router as dashboard_router
 from app.api.agent_sessions import router as agent_sessions_router
 from app.api.capabilities import router as capabilities_router
 from app.api.website_monitor import router as website_monitor_router
-
+from app.services.session_runner import (
+    execute_session,
+    get_running_website_monitor_sessions,
+)
+from threading import Event
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage background agent monitoring lifecycle."""
+    """Manage background agent and website-monitor tasks."""
 
     monitor_task = asyncio.create_task(monitor_agents())
+    recovery_tasks: list[asyncio.Task] = []
+    recovery_stop_events: list[Event] = []
+
+    # Restore website monitors that were running before backend shutdown.
+    session_uids = await asyncio.to_thread(
+        get_running_website_monitor_sessions
+    )
+
+    for session_uid in session_uids:
+        stop_event = Event()
+
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                execute_session,
+                session_uid,
+                stop_event,
+            )
+        )
+
+        recovery_stop_events.append(stop_event)
+        recovery_tasks.append(task)
 
     yield
 
     monitor_task.cancel()
 
+    for stop_event in recovery_stop_events:
+        stop_event.set()
+
     try:
         await monitor_task
     except asyncio.CancelledError:
         pass
+
+    if recovery_tasks:
+        await asyncio.gather(
+            *recovery_tasks,
+            return_exceptions=True,
+        )
 
 
 app = FastAPI(
