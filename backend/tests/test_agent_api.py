@@ -1666,6 +1666,33 @@ def test_dashboard_team_member_can_view_shared_agent_api(client):
         agent["id"] != agent_id
         for agent in outsider_response.json()
     )
+    # Team member can request stopping a process on the shared agent.
+    member_stop_response = client.post(
+        f"/api/v1/agents/{agent_id}/commands/stop-process",
+        headers={"Authorization": f"Bearer {member_token}"},
+        json={
+            "pid": 4321,
+            "create_time": 123456.0,
+            "process_name": "test-process.exe",
+        },
+    )
+
+    assert member_stop_response.status_code == 202
+
+    # Outsider cannot stop a process on the shared agent.
+    outsider_stop_response = client.post(
+        f"/api/v1/agents/{agent_id}/commands/stop-process",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+        json={
+            "pid": 4321,
+            "create_time": 123456.0,
+            "process_name": "test-process.exe",
+        },
+    )
+
+    assert outsider_stop_response.status_code == 404
+
+
 def test_user_can_create_and_list_team(client):
     """A user can create a team and see it in their team list."""
 
