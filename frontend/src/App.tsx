@@ -715,7 +715,13 @@ function App() {
                         )?.status === 'running'
                       }
                     >
-                      {monitorActionLoading ? 'Please wait...' : 'Start Monitor'}
+                      {monitorActionLoading
+                        ? 'Please wait...'
+                        : monitorSessions.find(
+                            (session) => session.session_uid === selectedMonitorUid,
+                          )?.status === 'failed'
+                          ? 'Restart Monitor'
+                          : 'Start Monitor'}
                     </button>
 
                     <button
