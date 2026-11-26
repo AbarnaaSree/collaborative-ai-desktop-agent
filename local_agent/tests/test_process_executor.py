@@ -108,3 +108,15 @@ def test_rejects_invalid_command():
 
     assert success is False
     assert "Invalid process identity" in message
+
+@patch("local_agent.execution.process_executor.psutil.Process")
+def test_rejects_process_that_is_not_running(mock_process):
+    process = make_process()
+    process.is_running.return_value = False
+    mock_process.return_value = process
+
+    success, message = stop_process(make_command())
+
+    assert success is False
+    assert "no longer running" in message
+    process.terminate.assert_not_called()
