@@ -393,7 +393,7 @@ function App() {
 
       try {
         const result = await apiRequest<ActivityLog[]>(
-          `/dashboard/activity/${selectedAgentId}?limit=10`,
+          `/dashboard/activity/${selectedAgentId}?limit=${activeNav === 'Activity Logs' ? 100 : 10}`,
           token,
         )
 
@@ -422,7 +422,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [token, selectedAgentId, refreshKey])
+  }, [token, selectedAgentId, refreshKey, activeNav])
 
     // Load website-monitor sessions belonging to the logged-in user.
   useEffect(() => {
@@ -649,7 +649,15 @@ function App() {
               <p className="subtitle">
                 {activeNav === 'Website Monitor'
                   ? 'View website monitoring sessions and their check history.'
-                  : 'Monitor your desktop environment and application health.'}
+                  : activeNav === 'Activity Logs'
+                    ? 'Review event history from your connected desktop agent.'
+                    : activeNav === 'Processes'
+                      ? 'View and manage processes running on your desktop agent.'
+                      : activeNav === 'Reports'
+                        ? 'Review system activity and monitoring reports.'
+                        : activeNav === 'Health Monitor'
+                          ? 'Monitor system health and resource usage.'
+                          : 'Monitor your desktop environment and application health.'}
               </p>
             </div>
 
@@ -687,7 +695,15 @@ function App() {
                   ? 'Refreshing...'
                   : activeNav === 'Website Monitor'
                     ? 'Refresh history'
-                    : 'Refresh overview'}
+                    : activeNav === 'Activity Logs'
+                      ? 'Refresh activity'
+                      : activeNav === 'Processes'
+                        ? 'Refresh processes'
+                        : activeNav === 'Health Monitor'
+                          ? 'Refresh health'
+                          : activeNav === 'Reports'
+                            ? 'Refresh reports'
+                            : 'Refresh overview'}
               </button>
             </div>
           </section>
@@ -900,7 +916,46 @@ function App() {
               )}
             </section>
           )}
-        {activeNav !== 'Website Monitor' && (
+        {activeNav === 'Activity Logs' && (
+          <section className="panel activity-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Activity Logs</h2>
+                <p>Latest 100 events for the selected agent</p>
+              </div>
+
+              <button
+                className="text-button"
+                onClick={() => setRefreshKey((current) => current + 1)}
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="activity-list">
+              {loadingActivity ? (
+                <p className="subtitle">Loading activity...</p>
+              ) : activityError ? (
+                <p className="subtitle">{activityError}</p>
+              ) : activities.length === 0 ? (
+                <p className="subtitle">No activity recorded yet.</p>
+              ) : (
+                activities.map((activity) => (
+                  <div className="activity-item" key={activity.id}>
+                    <div className="activity-item-content">
+                      <strong>{activity.event_type}</strong>
+                      <p>{activity.message}</p>
+                      <small>
+                        {new Date(activity.created_at).toLocaleString()}
+                      </small>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        )}
+        {activeNav !== 'Website Monitor' && activeNav !== 'Activity Logs' && (
           <>
           {dashboardError && (
             <div className="login-error">
