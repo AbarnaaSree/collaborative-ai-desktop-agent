@@ -964,3 +964,104 @@ tbody tr:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Health Monitor and page heading layout */
+.page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.page-heading-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 0 1 520px;
+  min-width: 0;
+}
+
+.page-heading-actions select {
+  width: 280px;
+  max-width: 100%;
+  min-width: 0;
+  font-size: 14px;
+  padding: 10px 12px;
+}
+
+.page-heading-actions .primary-button {
+  width: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .page-heading {
+    flex-direction: column;
+  }
+
+  .page-heading-actions {
+    width: 100%;
+    flex: 1 1 auto;
+    justify-content: flex-start;
+  }
+
+  .page-heading-actions select {
+    width: 100%;
+  }
+}
+
+/* Final heading layout override */
+.page-content .page-heading {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 24px;
+}
+
+.page-content .page-heading > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.page-content .page-heading .page-heading-actions {
+  display: flex !important;
+  flex: 0 1 430px !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px;
+}
+
+.page-content .page-heading .page-heading-actions select {
+  width: 250px !important;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 250px;
+}
+
+.page-content .page-heading .page-heading-actions .primary-button {
+  width: auto !important;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .page-content .page-heading {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .page-content .page-heading .page-heading-actions {
+    flex: 1 1 auto !important;
+    justify-content: flex-start !important;
+  }
+
+  .page-content .page-heading .page-heading-actions select {
+    width: 100% !important;
+  }
+}

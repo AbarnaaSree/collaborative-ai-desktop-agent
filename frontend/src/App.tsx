@@ -109,7 +109,15 @@ interface AgentCommandStatus {
 function normalizeHealth(status: string): string {
   const normalized = status.toLowerCase()
 
-  if (normalized === 'healthy' || normalized === 'warning' || normalized === 'critical') {
+  if (normalized === 'unhealthy') {
+    return 'critical'
+  }
+
+  if (
+    normalized === 'healthy' ||
+    normalized === 'warning' ||
+    normalized === 'critical'
+  ) {
     return normalized
   }
 
@@ -667,6 +675,23 @@ function App() {
   ).length
 
   const alertCount = warningCount + criticalCount
+  const averageCpu =
+    metricsHistory.length > 0
+      ? metricsHistory.reduce((total, item) => total + item.cpu_usage, 0) /
+        metricsHistory.length
+      : null
+
+  const averageMemory =
+    metricsHistory.length > 0
+      ? metricsHistory.reduce((total, item) => total + item.memory_usage, 0) /
+        metricsHistory.length
+      : null
+
+  const averageDisk =
+    metricsHistory.length > 0
+      ? metricsHistory.reduce((total, item) => total + item.disk_usage, 0) /
+        metricsHistory.length
+      : null
 
   const selectedAgent = agents.find(
     (agent) => agent.id === selectedAgentId,
@@ -1092,7 +1117,8 @@ function App() {
               </div>
             </div>
           )}
-
+          {activeNav === 'Overview' && (
+            <>
           <section className="metric-grid">
             <MetricCard
               title="CPU Usage"
@@ -1227,7 +1253,9 @@ function App() {
               </div>
             )}
           </section>
-
+          </>
+          )}
+          {activeNav === 'Processes' && (
           <section className="content-grid">
             <div className="panel process-panel">
               <div className="panel-header">
@@ -1485,6 +1513,234 @@ function App() {
               </div>
             </div>
           </section>
+          )}
+
+          {activeNav === 'Health Monitor' && (
+            <section className="health-monitor-page">
+              <div className="metric-grid">
+                <MetricCard
+                  title="Healthy Processes"
+                  value={String(healthyCount)}
+                  change="Running normally"
+                  icon="✓"
+                  color="green"
+                />
+
+                <MetricCard
+                  title="Warning Processes"
+                  value={String(warningCount)}
+                  change="Need attention"
+                  icon="△"
+                  color="orange"
+                />
+
+                <MetricCard
+                  title="Critical Processes"
+                  value={String(criticalCount)}
+                  change="Unhealthy processes"
+                  icon="!"
+                  color="red"
+                />
+
+                <MetricCard
+                  title="Total Processes"
+                  value={String(processes.length)}
+                  change="Latest process snapshot"
+                  icon="▤"
+                  color="blue"
+                />
+              </div>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Process Health Details</h2>
+                    <p>
+                      Health status and reasons reported by your desktop agent
+                    </p>
+                  </div>
+                </div>
+
+                {loadingDashboard ? (
+                  <p className="subtitle">Loading process health...</p>
+                ) : !dashboard ? (
+                  <p className="subtitle">
+                    No process health data available for this agent.
+                  </p>
+                ) : processes.length === 0 ? (
+                  <p className="subtitle">
+                    No processes were reported in the latest snapshot.
+                  </p>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Process</th>
+                          <th>PID</th>
+                          <th>CPU</th>
+                          <th>Memory</th>
+                          <th>Health</th>
+                          <th>Health Details</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {processes.map((process) => {
+                          const health = normalizeHealth(
+                            process.health_status,
+                          )
+
+                          const healthLabel =
+                            health === 'unknown'
+                              ? 'Unknown'
+                              : health.charAt(0).toUpperCase() +
+                                health.slice(1)
+
+                          const details =
+                            process.health_reasons.length > 0
+                              ? process.health_reasons.join(' · ')
+                              : 'No health issues reported.'
+
+                          return (
+                            <tr
+                              key={`${process.pid}-${process.name}`}
+                            >
+                              <td>
+                                <strong>{process.name}</strong>
+                              </td>
+                              <td>{process.pid}</td>
+                              <td>
+                                {process.cpu_percent.toFixed(1)}%
+                              </td>
+                              <td>
+                                {(
+                                  process.memory_rss /
+                                  1024 ** 2
+                                ).toFixed(1)} MB
+                              </td>
+                              <td>
+                                <HealthBadge status={healthLabel} />
+                              </td>
+                              <td>{details}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            </section>
+          )}
+          {activeNav === 'Reports' && (
+            <section className="reports-page">
+              <div className="metric-grid">
+                <MetricCard
+                  title="Average CPU"
+                  value={averageCpu !== null ? `${averageCpu.toFixed(1)}%` : '—'}
+                  change="From recorded samples"
+                  icon="◉"
+                  color="purple"
+                />
+
+                <MetricCard
+                  title="Average Memory"
+                  value={averageMemory !== null ? `${averageMemory.toFixed(1)}%` : '—'}
+                  change="From recorded samples"
+                  icon="▥"
+                  color="blue"
+                />
+
+                <MetricCard
+                  title="Average Disk"
+                  value={averageDisk !== null ? `${averageDisk.toFixed(1)}%` : '—'}
+                  change="From recorded samples"
+                  icon="▤"
+                  color="green"
+                />
+
+                <MetricCard
+                  title="Health Alerts"
+                  value={dashboard ? String(alertCount) : '—'}
+                  change="Warnings and critical processes"
+                  icon="△"
+                  color="orange"
+                />
+              </div>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Resource Usage Report</h2>
+                    <p>Latest recorded CPU, memory and disk measurements</p>
+                  </div>
+                </div>
+
+                {loadingMetricsHistory ? (
+                  <p className="subtitle">Loading report data...</p>
+                ) : metricsHistoryError ? (
+                  <p className="subtitle">{metricsHistoryError}</p>
+                ) : metricsHistory.length === 0 ? (
+                  <p className="subtitle">No resource history is available yet.</p>
+                ) : (
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Recorded At</th>
+                          <th>CPU</th>
+                          <th>Memory</th>
+                          <th>Disk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...metricsHistory].reverse().slice(0, 10).map((item) => (
+                          <tr key={item.id}>
+                            <td>{new Date(item.recorded_at).toLocaleString()}</td>
+                            <td>{item.cpu_usage.toFixed(1)}%</td>
+                            <td>{item.memory_usage.toFixed(1)}%</td>
+                            <td>{item.disk_usage.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Recent Activity Report</h2>
+                    <p>Recent events recorded for the selected desktop agent</p>
+                  </div>
+                </div>
+
+                {loadingActivity ? (
+                  <p className="subtitle">Loading activity report...</p>
+                ) : activityError ? (
+                  <p className="subtitle">{activityError}</p>
+                ) : activities.length === 0 ? (
+                  <p className="subtitle">No activity records are available yet.</p>
+                ) : (
+                  <div className="activity-list">
+                    {activities.slice(0, 10).map((activity) => (
+                      <div className="activity-item" key={activity.id}>
+                        <div className="activity-item-content">
+                          <strong>{activity.event_type}</strong>
+                          <p>{activity.message}</p>
+                          <small>
+                            {new Date(activity.created_at).toLocaleString()}
+                          </small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </section>
+          )}
 
           <footer className="dashboard-footer">
             <span>
