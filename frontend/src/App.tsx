@@ -3,7 +3,16 @@ import { useEffect, useState } from 'react'
 import './App.css'
 import Login from './Login'
 import { apiRequest, apiPostRequest } from './api'
-
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend as ChartLegend,
+  ResponsiveContainer,
+} from 'recharts'
 interface Agent {
   id: number
   agent_uid: string
@@ -50,6 +59,20 @@ interface ActivityLog {
   message: string
   created_at: string
 }
+
+interface ResourceMetric {
+  id: number
+  agent_id: number
+  cpu_usage: number
+  memory_usage: number
+  memory_total: number
+  memory_available: number
+  disk_usage: number
+  disk_total: number
+  disk_free: number
+  uptime_seconds: number
+  recorded_at: string
+}
 interface WebsiteMonitorSession {
   id: number
   session_uid: string
@@ -95,6 +118,9 @@ function App() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null)
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null)
+  const [metricsHistory, setMetricsHistory] = useState<ResourceMetric[]>([])
+  const [loadingMetricsHistory, setLoadingMetricsHistory] = useState(false)
+  const [metricsHistoryError, setMetricsHistoryError] = useState('')
   const [activities, setActivities] = useState<ActivityLog[]>([])
   const [loadingActivity, setLoadingActivity] = useState(false)
   const [activityError, setActivityError] = useState('')
@@ -377,6 +403,53 @@ function App() {
       cancelled = true
     }
   }, [token, selectedAgentId, refreshKey])
+
+  // Load resource metrics history for the selected agent.
+  useEffect(() => {
+    if (!token || selectedAgentId === null) {
+      setMetricsHistory([])
+      return
+    }
+
+    let cancelled = false
+
+    async function loadMetricsHistory() {
+      setLoadingMetricsHistory(true)
+      setMetricsHistoryError('')
+
+      try {
+        const result = await apiRequest<ResourceMetric[]>(
+          `/dashboard/metrics-history/${selectedAgentId}?limit=100`,
+          token,
+        )
+
+        if (!cancelled) {
+          // API returns newest first; chart should display oldest first.
+          setMetricsHistory([...result].reverse())
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMetricsHistoryError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load metrics history',
+          )
+          setMetricsHistory([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMetricsHistory(false)
+        }
+      }
+    }
+
+    loadMetricsHistory()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token, selectedAgentId, refreshKey])
+
 
   // Load recent activity for the selected agent.
   useEffect(() => {
@@ -1033,6 +1106,87 @@ function App() {
               icon="△"
               color="orange"
             />
+          </section>
+
+          <section className="panel resource-history-panel">
+            <div className="panel-header">
+              <div>
+                <h2>Resource Usage History</h2>
+                <p>CPU, memory and disk usage over the latest 100 samples</p>
+              </div>
+
+              <button
+                className="text-button"
+                onClick={() => setRefreshKey((current) => current + 1)}
+              >
+                Refresh
+              </button>
+            </div>
+
+            {loadingMetricsHistory ? (
+              <p className="subtitle">Loading resource history...</p>
+            ) : metricsHistoryError ? (
+              <p className="subtitle">{metricsHistoryError}</p>
+            ) : metricsHistory.length === 0 ? (
+              <p className="subtitle">
+                No resource history recorded yet.
+              </p>
+            ) : (
+              <div style={{ width: '100%', height: 320 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={metricsHistory}>
+                    <CartesianGrid strokeDasharray="3 3" />
+
+                    <XAxis
+                      dataKey="recorded_at"
+                      tickFormatter={(value) =>
+                        new Date(value).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      }
+                    />
+
+                    <YAxis domain={[0, 100]} unit="%" />
+
+                    <Tooltip
+                      labelFormatter={(value) =>
+                        new Date(String(value)).toLocaleString()
+                      }
+                      formatter={(value) => [
+                        `${Number(value).toFixed(1)}%`,
+                      ]}
+                    />
+
+                    <ChartLegend />
+
+                    <Line
+                      type="monotone"
+                      dataKey="cpu_usage"
+                      name="CPU"
+                      stroke="#8b5cf6"
+                      dot={false}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="memory_usage"
+                      name="Memory"
+                      stroke="#3b82f6"
+                      dot={false}
+                    />
+
+                    <Line
+                      type="monotone"
+                      dataKey="disk_usage"
+                      name="Disk"
+                      stroke="#f59e0b"
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </section>
 
           <section className="content-grid">
