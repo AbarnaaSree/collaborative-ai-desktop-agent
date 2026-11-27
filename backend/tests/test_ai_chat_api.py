@@ -126,3 +126,57 @@ def test_ai_chat_rejects_empty_message(client):
     )
 
     assert response.status_code == 422
+
+def test_ai_chat_returns_503_when_api_key_missing(client, monkeypatch):
+    """Return 503 when OpenRouter is not configured."""
+
+    from app.api import ai_chat
+
+    async def mock_generate_ai_reply(message: str) -> str:
+        raise ValueError("OpenRouter API key is not configured")
+
+    monkeypatch.setattr(
+        ai_chat,
+        "generate_ai_reply",
+        mock_generate_ai_reply,
+    )
+
+    token = register_and_login(client)
+
+    response = client.post(
+        "/api/v1/ai/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"message": "Hello AI"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "OpenRouter API key is not configured"
+
+def test_ai_chat_returns_502_when_provider_fails(client, monkeypatch):
+    """Return 502 when the AI provider request fails."""
+
+    import httpx
+
+    from app.api import ai_chat
+
+    async def mock_generate_ai_reply(message: str) -> str:
+        raise httpx.ConnectError("Provider unavailable")
+
+    monkeypatch.setattr(
+        ai_chat,
+        "generate_ai_reply",
+        mock_generate_ai_reply,
+    )
+
+    token = register_and_login(client)
+
+    response = client.post(
+        "/api/v1/ai/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"message": "Hello AI"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "The AI provider could not process the request"
+    )
