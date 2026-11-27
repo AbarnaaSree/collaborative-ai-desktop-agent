@@ -17,6 +17,7 @@ from app.services.session_runner import (
     get_running_website_monitor_sessions,
 )
 from app.services.session_worker_manager import session_worker_manager
+from app.api.ai_chat import router as ai_chat_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,6 +82,7 @@ app.include_router(
     prefix="/api/v1",
 )
 
+app.include_router(ai_chat_router, prefix="/api/v1")
 app.include_router(capabilities_router, prefix="/api/v1")
 app.include_router(teams_router, prefix="/api/v1")
 
