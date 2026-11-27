@@ -11,6 +11,7 @@ from app.schemas.activity_log import ActivityLogResponse
 from app.services.activity_log_service import get_recent_activity
 from app.schemas.resource_report import ResourceReportResponse
 from app.services.resource_report_service import get_resource_report
+from app.schemas.agent_metric import AgentMetricResponse
 
 router = APIRouter(
     prefix="/dashboard",
@@ -195,3 +196,44 @@ def get_dashboard_resource_report(
         )
 
     return report
+
+
+@router.get(
+    "/metrics-history/{agent_id}",
+    response_model=list[AgentMetricResponse],
+)
+def get_dashboard_metrics_history(
+    agent_id: int,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return resource metrics history for an agent visible to the current user."""
+
+    if not 1 <= limit <= 1000:
+        raise HTTPException(
+            status_code=422,
+            detail="Limit must be between 1 and 1000",
+        )
+
+    agents = get_user_agents(
+        db=db,
+        user_id=current_user.id,
+    )
+
+    agent = next(
+        (item for item in agents if item.id == agent_id),
+        None,
+    )
+
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found",
+        )
+
+    return get_agent_metrics(
+        db=db,
+        agent_id=agent.id,
+        limit=limit,
+    )

@@ -2233,3 +2233,124 @@ def test_dashboard_resource_report_rejects_agent_owned_by_another_user(client):
 
     assert report_response.status_code == 404
     assert report_response.json()["detail"] == "Agent not found"
+
+
+def test_dashboard_metrics_history_api(client):
+    """Test dashboard returns resource metrics history for an owned agent."""
+
+    user_token, _ = register_and_login(
+        client,
+        "metrics-history@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Metrics History Agent",
+            "hostname": "METRICS-HISTORY-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
+    metrics_response = client.post(
+        "/api/v1/agents/metrics",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=sample_metric_payload(),
+    )
+
+    assert metrics_response.status_code == 201
+
+    history_response = client.get(
+        f"/api/v1/dashboard/metrics-history/{agent_id}?limit=10",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert history_response.status_code == 200
+
+    history = history_response.json()
+
+    assert len(history) == 1
+    assert history[0]["agent_id"] == agent_id
+    assert history[0]["cpu_usage"] == 45.5
+    assert history[0]["memory_usage"] == 65.0
+    assert history[0]["disk_usage"] == 70.0
+    assert history[0]["uptime_seconds"] == 86400
+    assert history[0]["recorded_at"] is not None
+
+
+def test_dashboard_metrics_history_rejects_invalid_limit(client):
+    """Test dashboard metrics history rejects limits outside 1-1000."""
+
+    user_token, _ = register_and_login(
+        client,
+        "metrics-history-limit@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Metrics Limit Agent",
+            "hostname": "METRICS-LIMIT-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    agent_id = registration.json()["id"]
+
+    for invalid_limit in (0, 1001):
+        response = client.get(
+            f"/api/v1/dashboard/metrics-history/{agent_id}"
+            f"?limit={invalid_limit}",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert response.status_code == 422
+
+
+def test_dashboard_metrics_history_rejects_agent_owned_by_another_user(client):
+    """Test users cannot view another user's metrics history."""
+
+    owner_token, _ = register_and_login(
+        client,
+        "metrics-history-owner@example.com",
+    )
+
+    outsider_token, _ = register_and_login(
+        client,
+        "metrics-history-outsider@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Private Metrics Agent",
+            "hostname": "PRIVATE-METRICS-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    agent_id = registration.json()["id"]
+
+    response = client.get(
+        f"/api/v1/dashboard/metrics-history/{agent_id}",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Agent not found"
