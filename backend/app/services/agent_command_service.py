@@ -53,3 +53,17 @@ def create_stop_process_command(
     db.refresh(command)
 
     return command
+
+def get_command_for_requester(
+    db: Session,
+    command_uid: str,
+    requested_by_user_id: int,
+) -> AgentCommand | None:
+    """Get a command only if it was requested by the given user."""
+
+    return db.scalar(
+        select(AgentCommand).where(
+            AgentCommand.command_uid == command_uid,
+            AgentCommand.requested_by_user_id == requested_by_user_id,
+        )
+    )

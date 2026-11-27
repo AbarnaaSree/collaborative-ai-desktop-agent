@@ -61,6 +61,7 @@ from app.schemas.agent_command import (
 )
 from app.services.agent_command_service import (
     create_stop_process_command,
+    get_command_for_requester,
 )
 from app.models import AgentCommand
 from datetime import datetime, timezone
@@ -587,5 +588,30 @@ def report_command_result(
 
     db.commit()
     db.refresh(command)
+
+    return command
+
+@router.get(
+    "/commands/{command_uid}",
+    response_model=AgentCommandResponse,
+)
+def get_command_status(
+    command_uid: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the status of a command requested by the current user."""
+
+    command = get_command_for_requester(
+        db=db,
+        command_uid=str(command_uid),
+        requested_by_user_id=current_user.id,
+    )
+
+    if command is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Command not found",
+        )
 
     return command

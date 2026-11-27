@@ -93,6 +93,18 @@ interface WebsiteMonitorCheck {
   checked_at: string
   created_at: string
 }
+interface AgentCommandStatus {
+  command_uid: string
+  command_type: string
+  target_pid: number
+  target_create_time: number
+  target_process_name: string
+  status: 'pending' | 'claimed' | 'succeeded' | 'failed'
+  result_message: string | null
+  created_at: string
+  claimed_at: string | null
+  completed_at: string | null
+}
 
 function normalizeHealth(status: string): string {
   const normalized = status.toLowerCase()
@@ -256,8 +268,35 @@ function App() {
         },
       )
 
+      const commandUid = result.command_uid
+
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+
+        const command = await apiRequest<AgentCommandStatus>(
+          `/agents/commands/${commandUid}`,
+          token,
+        )
+
+        if (command.status === 'succeeded') {
+          window.alert(
+            command.result_message || 'Process stopped successfully.',
+          )
+          setRefreshKey((current) => current + 1)
+          return
+        }
+
+        if (command.status === 'failed') {
+          window.alert(
+            command.result_message || 'Failed to stop the process.',
+          )
+          setRefreshKey((current) => current + 1)
+          return
+        }
+      }
+
       window.alert(
-        `Stop request queued successfully.\nCommand ID: ${result.command_uid}`,
+        'The stop command is still pending. The agent may be offline or still processing it. Refresh the process list later to check.',
       )
 
       setRefreshKey((current) => current + 1)
@@ -265,7 +304,7 @@ function App() {
       window.alert(
         error instanceof Error
           ? error.message
-          : 'Failed to queue stop request',
+          : 'Failed to queue or check the stop request.',
       )
     }
   }

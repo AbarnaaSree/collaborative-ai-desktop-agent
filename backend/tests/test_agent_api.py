@@ -2354,3 +2354,62 @@ def test_dashboard_metrics_history_rejects_agent_owned_by_another_user(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Agent not found"
+
+
+def test_user_can_only_get_their_own_command_status(client):
+    """A user can read their command status but not another user's."""
+
+    user_token, _ = register_and_login(
+        client,
+        "commandstatusowner@example.com",
+    )
+
+    agent_registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Command Status Test Agent",
+            "hostname": "COMMAND-STATUS-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert agent_registration.status_code == 201
+    agent_id = agent_registration.json()["id"]
+
+    queued = client.post(
+        f"/api/v1/agents/{agent_id}/commands/stop-process",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "pid": 4321,
+            "create_time": 123456.0,
+            "process_name": "status-test.exe",
+        },
+    )
+
+    assert queued.status_code == 202
+    command_uid = queued.json()["command_uid"]
+
+    # The command owner can retrieve the status.
+    own_response = client.get(
+        f"/api/v1/agents/commands/{command_uid}",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert own_response.status_code == 200
+    assert own_response.json()["command_uid"] == command_uid
+    assert own_response.json()["status"] == "pending"
+
+    # A different user cannot retrieve this command.
+    other_user_token, _ = register_and_login(
+        client,
+        "commandstatusother@example.com",
+    )
+
+    other_response = client.get(
+        f"/api/v1/agents/commands/{command_uid}",
+        headers={"Authorization": f"Bearer {other_user_token}"},
+    )
+
+    assert other_response.status_code == 404
