@@ -2104,3 +2104,132 @@ def test_create_team_rejects_whitespace_only_name(client):
     )
 
     assert response.status_code == 422
+
+def test_dashboard_resource_report_api(client):
+    """Test dashboard returns a resource report for an owned agent."""
+
+    user_token, _ = register_and_login(
+        client,
+        "resource-report@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Resource Report Agent",
+            "hostname": "RESOURCE-REPORT-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
+    metrics_response = client.post(
+        "/api/v1/agents/metrics",
+        headers={"Authorization": f"Bearer {agent_token}"},
+        json=sample_metric_payload(),
+    )
+
+    assert metrics_response.status_code == 201
+
+    report_response = client.get(
+        f"/api/v1/dashboard/resource-report/{agent_id}",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert report_response.status_code == 200
+
+    report = report_response.json()
+
+    assert report["agent_id"] == agent_id
+    assert report["sample_count"] == 1
+
+    assert report["cpu_usage"]["average"] == 45.5
+    assert report["cpu_usage"]["maximum"] == 45.5
+
+    assert report["memory_usage"]["average"] == 65.0
+    assert report["memory_usage"]["maximum"] == 65.0
+
+    assert report["disk_usage"]["average"] == 70.0
+    assert report["disk_usage"]["maximum"] == 70.0
+
+    assert report["latest_uptime_seconds"] == 86400
+    assert report["period_start"] is not None
+    assert report["period_end"] is not None
+
+
+def test_dashboard_resource_report_returns_404_without_metrics(client):
+    """Test dashboard returns 404 when an agent has no metrics."""
+
+    user_token, _ = register_and_login(
+        client,
+        "resource-report-empty@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Agent Without Metrics",
+            "hostname": "EMPTY-RESOURCE-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    agent_id = registration.json()["id"]
+
+    report_response = client.get(
+        f"/api/v1/dashboard/resource-report/{agent_id}",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert report_response.status_code == 404
+    assert report_response.json()["detail"] == (
+        "No resource metrics available for this agent"
+    )
+
+
+def test_dashboard_resource_report_rejects_agent_owned_by_another_user(client):
+    """Test users cannot view another user's resource report."""
+
+    owner_token, _ = register_and_login(
+        client,
+        "resource-report-owner@example.com",
+    )
+
+    outsider_token, _ = register_and_login(
+        client,
+        "resource-report-outsider@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={
+            "name": "Private Resource Agent",
+            "hostname": "PRIVATE-RESOURCE-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    agent_id = registration.json()["id"]
+
+    report_response = client.get(
+        f"/api/v1/dashboard/resource-report/{agent_id}",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+    )
+
+    assert report_response.status_code == 404
+    assert report_response.json()["detail"] == "Agent not found"
