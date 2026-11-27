@@ -42,4 +42,27 @@ async def generate_ai_reply(message: str) -> str:
 
     result = response.json()
 
-    return result["choices"][0]["message"]["content"]
+    if not isinstance(result, dict):
+        raise ValueError("OpenRouter returned an invalid response")
+
+    choices = result.get("choices")
+
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("OpenRouter returned an empty response")
+
+    first_choice = choices[0]
+
+    if not isinstance(first_choice, dict):
+        raise ValueError("OpenRouter returned an invalid response")
+
+    message_data = first_choice.get("message")
+
+    if not isinstance(message_data, dict):
+        raise ValueError("OpenRouter returned an invalid response")
+
+    content = message_data.get("content")
+
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("OpenRouter returned an empty or invalid reply")
+
+    return content
