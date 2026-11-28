@@ -298,11 +298,59 @@ def submit_metrics(
 ):
     """Store resource metrics from an authenticated desktop agent."""
 
+    # Get the previous metric before saving the new one.
+    previous_metrics = get_agent_metrics(
+        db=db,
+        agent_id=current_agent.id,
+        limit=1,
+    )
+
+    previous_metric = (
+        previous_metrics[0] if previous_metrics else None
+    )
     metric = create_agent_metric(
         db=db,
         agent_id=current_agent.id,
         metric_data=metric_data,
     )
+    # Detect resource threshold warnings and recovery transitions.
+    resource_thresholds = [
+        ("CPU", "cpu_usage", 85.0),
+        ("Memory", "memory_usage", 85.0),
+        ("Disk", "disk_usage", 90.0),
+    ]
+
+    if previous_metric is not None:
+        for resource_name, field_name, threshold in resource_thresholds:
+            previous_value = getattr(previous_metric, field_name)
+            current_value = getattr(metric_data, field_name)
+
+            was_high = previous_value >= threshold
+            is_high = current_value >= threshold
+
+            if not was_high and is_high:
+                create_activity_log(
+                    db=db,
+                    agent_id=current_agent.id,
+                    event_type="resource_threshold_warning",
+                    message=(
+                        f"{resource_name} usage reached "
+                        f"{current_value:.1f}% "
+                        f"(threshold: {threshold:.1f}%)."
+                    ),
+                )
+
+            elif was_high and not is_high:
+                create_activity_log(
+                    db=db,
+                    agent_id=current_agent.id,
+                    event_type="resource_threshold_recovered",
+                    message=(
+                        f"{resource_name} usage recovered to "
+                        f"{current_value:.1f}% "
+                        f"(threshold: {threshold:.1f}%)."
+                    ),
+                )
 
     latest_activity = get_latest_activity_by_type(
         db=db,

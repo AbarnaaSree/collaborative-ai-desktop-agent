@@ -1741,6 +1741,189 @@ def test_metrics_activity_is_throttled(client):
 
     assert len(metrics_activities) == 1
 
+def test_cpu_threshold_alerts_only_on_transition(client):
+    """Create one CPU warning and one recovery alert without duplicates."""
+
+    user_token, _ = register_and_login(
+        client,
+        "cpu-alert@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "CPU Alert Test Agent",
+            "hostname": "CPU-ALERT-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    # Baseline: CPU usage is normal.
+    baseline = sample_metric_payload()
+    client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=baseline,
+    )
+
+    # CPU crosses the warning threshold.
+    high_cpu = sample_metric_payload()
+    high_cpu["cpu_usage"] = 90.0
+
+    first_high_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=high_cpu,
+    )
+
+    # CPU remains high; this should not create another alert.
+    second_high_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=high_cpu,
+    )
+
+    # CPU returns to normal; create a recovery alert.
+    recovered_cpu = sample_metric_payload()
+    recovered_cpu["cpu_usage"] = 40.0
+
+    recovery_response = client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=recovered_cpu,
+    )
+
+    assert first_high_response.status_code == 201
+    assert second_high_response.status_code == 201
+    assert recovery_response.status_code == 201
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=20",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    cpu_warning_activities = [
+        activity
+        for activity in activities
+        if activity["event_type"] == "resource_threshold_warning"
+        and "CPU" in activity["message"]
+    ]
+
+    cpu_recovery_activities = [
+        activity
+        for activity in activities
+        if activity["event_type"] == "resource_threshold_recovered"
+        and "CPU" in activity["message"]
+    ]
+
+    assert len(cpu_warning_activities) == 1
+    assert len(cpu_recovery_activities) == 1
+
+def test_memory_and_disk_threshold_alerts_only_on_transition(client):
+    """Create memory and disk alerts only when their status changes."""
+
+    user_token, _ = register_and_login(
+        client,
+        "resource-alerts@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Resource Alert Test Agent",
+            "hostname": "RESOURCE-ALERT-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
+    headers = {"Authorization": f"Bearer {agent_token}"}
+
+    # Establish a normal baseline.
+    baseline = sample_metric_payload()
+    client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=baseline,
+    )
+
+    # Both memory and disk cross their thresholds.
+    high_resources = sample_metric_payload()
+    high_resources["memory_usage"] = 90.0
+    high_resources["disk_usage"] = 95.0
+
+    client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=high_resources,
+    )
+
+    # Both remain high; no duplicate warnings should be created.
+    client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=high_resources,
+    )
+
+    # Both recover.
+    recovered_resources = sample_metric_payload()
+    recovered_resources["memory_usage"] = 60.0
+    recovered_resources["disk_usage"] = 70.0
+
+    client.post(
+        "/api/v1/agents/metrics",
+        headers=headers,
+        json=recovered_resources,
+    )
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=20",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    for resource_name in ("Memory", "Disk"):
+        warnings = [
+            activity
+            for activity in activities
+            if activity["event_type"] == "resource_threshold_warning"
+            and resource_name in activity["message"]
+        ]
+
+        recoveries = [
+            activity
+            for activity in activities
+            if activity["event_type"] == "resource_threshold_recovered"
+            and resource_name in activity["message"]
+        ]
+
+        assert len(warnings) == 1
+        assert len(recoveries) == 1
+
 def test_dashboard_team_member_can_view_shared_agent_api(client):
     """Team members can view shared agents; outsiders cannot."""
 
