@@ -185,6 +185,8 @@ def heartbeat(
     """Receive a heartbeat from an authenticated desktop agent."""
 
     previous_status = current_agent.status
+    previous_last_heartbeat = current_agent.last_heartbeat
+
     agent = record_agent_heartbeat(
         db=db,
         agent=current_agent,
@@ -195,6 +197,16 @@ def heartbeat(
             agent_id=agent.id,
             event_type="agent_online",
             message=f"{agent.name} is online",
+        )
+    if (
+        previous_status == "offline"
+        and previous_last_heartbeat is not None
+    ):
+        create_activity_log(
+            db=db,
+            agent_id=agent.id,
+            event_type="agent_connection_restored",
+            message=f"{agent.name} reconnected and is online.",
         )
 
     return AgentHeartbeatResponse(

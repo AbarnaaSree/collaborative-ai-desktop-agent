@@ -17,6 +17,7 @@ from app.services.agent_service import (
 from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
+from app.models.activity_log import ActivityLog
 
 @pytest.fixture
 def db_session():
@@ -278,6 +279,7 @@ def test_mark_stale_agents_offline(db_session):
 
     marked_count = mark_stale_agents_offline(db_session)
 
+
     db_session.refresh(stale_agent)
     db_session.refresh(active_agent)
     db_session.refresh(new_agent)
@@ -286,6 +288,35 @@ def test_mark_stale_agents_offline(db_session):
     assert stale_agent.status == "offline"
     assert active_agent.status == "online"
     assert new_agent.status == "offline"
+
+    # Verify exactly one connection-lost activity was created.
+    lost_activities = (
+        db_session.query(ActivityLog)
+        .filter_by(
+            agent_id=stale_agent.id,
+            event_type="agent_connection_lost",
+        )
+        .count()
+    )
+
+    assert lost_activities == 1
+
+    # Run the offline monitor again.
+    # Already-offline agents should not generate duplicate alerts.
+    second_count = mark_stale_agents_offline(db_session)
+
+    assert second_count == 0
+
+    lost_activities_after_second_run = (
+        db_session.query(ActivityLog)
+        .filter_by(
+            agent_id=stale_agent.id,
+            event_type="agent_connection_lost",
+        )
+        .count()
+    )
+
+    assert lost_activities_after_second_run == 1
 
 def test_get_user_agents_includes_team_agents_for_members(db_session):
     """Team members can see shared agents, but outsiders cannot."""

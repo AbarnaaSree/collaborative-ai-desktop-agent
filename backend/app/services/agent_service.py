@@ -11,6 +11,7 @@ from app.core.security import (
 from app.models import Agent, TeamMember
 from app.schemas.agent import AgentRegistrationRequest
 from app.core.config import settings
+from app.services.activity_log_service import create_activity_log
 
 
 def register_agent(
@@ -114,6 +115,17 @@ def mark_stale_agents_offline(db: Session) -> int:
 
     for agent in stale_agents:
         agent.status = "offline"
+
+        create_activity_log(
+            db=db,
+            agent_id=agent.id,
+            event_type="agent_connection_lost",
+            message=(
+                f"Agent '{agent.name}' went offline after "
+                f"missing heartbeats for "
+                f"{settings.AGENT_HEARTBEAT_TIMEOUT_SECONDS} seconds."
+            ),
+        )
 
     db.commit()
 

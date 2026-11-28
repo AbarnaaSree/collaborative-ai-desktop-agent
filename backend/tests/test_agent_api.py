@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.core.database import Base, get_db
-from app.models import Team, TeamMember
+from app.models import Team, TeamMember, Agent
 
 
 @pytest.fixture
@@ -314,6 +314,71 @@ def test_agent_heartbeat_success_api(client):
         activity["event_type"] == "agent_online"
         for activity in activities
     )
+    # Simulate the agent going offline in the test database.
+    db_generator = app.dependency_overrides[get_db]()
+    db = next(db_generator)
+
+    try:
+        test_agent = db.query(Agent).filter(
+            Agent.id == agent_id
+        ).first()
+
+        assert test_agent is not None
+
+        test_agent.status = "offline"
+        db.commit()
+    finally:
+        db_generator.close()
+
+    # Send heartbeat again to simulate reconnecting.
+    reconnect_response = client.post(
+        "/api/v1/agents/heartbeat",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert reconnect_response.status_code == 200
+    assert reconnect_response.json()["status"] == "online"
+
+    # Verify exactly one reconnect activity was recorded.
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=20",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    restored_count = sum(
+        activity["event_type"] == "agent_connection_restored"
+        for activity in activities
+    )
+
+    assert restored_count == 1
+
+    # A normal repeated heartbeat must not create another reconnect alert.
+    repeated_heartbeat = client.post(
+        "/api/v1/agents/heartbeat",
+        headers={"Authorization": f"Bearer {agent_token}"},
+    )
+
+    assert repeated_heartbeat.status_code == 200
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=20",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+
+    restored_count_after_repeat = sum(
+        activity["event_type"] == "agent_connection_restored"
+        for activity in activities
+    )
+
+    assert restored_count_after_repeat == 1
 
 
 def test_agent_heartbeat_without_token_api(client):
