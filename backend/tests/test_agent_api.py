@@ -995,6 +995,100 @@ def test_submit_agent_process_snapshot_api(client):
         for activity in activities
     )
 
+def test_process_health_transitions_create_activity_once(client):
+    """Health changes create alerts, but repeated states do not."""
+
+    user_token, _ = register_and_login(
+        client,
+        "healthtransitions@example.com",
+    )
+
+    registration = client.post(
+        "/api/v1/agents/register",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={
+            "name": "Health Transition Test Agent",
+            "hostname": "HEALTH-TEST-PC",
+            "operating_system": "Windows 11",
+            "agent_version": "1.0.0",
+        },
+    )
+
+    assert registration.status_code == 201
+
+    registration_data = registration.json()
+    agent_id = registration_data["id"]
+    agent_token = registration_data["agent_token"]
+
+    agent_headers = {
+        "Authorization": f"Bearer {registration_data['agent_token']}"
+    }
+
+    # First snapshot: healthy baseline, no health alert.
+    payload = sample_process_snapshot_payload()
+    payload["processes"][0]["health_status"] = "healthy"
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers=agent_headers,
+        json=payload,
+    )
+    assert response.status_code == 201
+
+    # Healthy -> warning: should create one warning activity.
+    payload["processes"][0]["health_status"] = "warning"
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers=agent_headers,
+        json=payload,
+    )
+    assert response.status_code == 201
+
+    # Remain warning: should not create a duplicate warning.
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers=agent_headers,
+        json=payload,
+    )
+    assert response.status_code == 201
+
+    # Warning -> unhealthy: should create a critical activity.
+    payload["processes"][0]["health_status"] = "unhealthy"
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers=agent_headers,
+        json=payload,
+    )
+    assert response.status_code == 201
+
+    # Unhealthy -> healthy: should create a recovery activity.
+    payload["processes"][0]["health_status"] = "healthy"
+
+    response = client.post(
+        "/api/v1/agents/processes",
+        headers=agent_headers,
+        json=payload,
+    )
+    assert response.status_code == 201
+
+    activity_response = client.get(
+        f"/api/v1/dashboard/activity/{agent_id}?limit=100",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+
+    assert activity_response.status_code == 200
+
+    activities = activity_response.json()
+    event_types = [
+        activity["event_type"]
+        for activity in activities
+    ]
+
+    assert event_types.count("process_health_warning") == 1
+    assert event_types.count("process_health_critical") == 1
+    assert event_types.count("process_health_recovered") == 1
 
 def test_submit_agent_process_snapshot_without_authentication(client):
     """Reject process snapshot submissions without agent authentication."""

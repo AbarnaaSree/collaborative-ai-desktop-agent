@@ -368,13 +368,62 @@ def submit_process_snapshot(
     current_agent: Agent = Depends(get_current_agent),
     db: Session = Depends(get_db),
 ):
-    """Store a process snapshot from the authenticated desktop agent."""
+    """Store a process snapshot and record health transitions."""
 
+    # Get the previous snapshot before saving the new one.
+    previous_processes = get_latest_process_snapshot(
+        db=db,
+        agent_id=current_agent.id,
+    )
+
+    previous_by_identity = {
+        (process.pid, process.create_time): process
+        for process in (previous_processes or [])
+    }
+
+    # Store the new snapshot.
     snapshot_uid, process_count = store_process_snapshot(
         db=db,
         agent_id=current_agent.id,
         snapshot=snapshot_data,
     )
+
+    # Record health changes only for processes seen in both snapshots.
+    for process in snapshot_data.processes:
+        identity = (process.pid, process.create_time)
+        previous = previous_by_identity.get(identity)
+
+        # First snapshot is a baseline. New processes are also baseline
+        # observations, so don't alert just because they start unhealthy.
+        if previous is None:
+            continue
+
+        previous_health = previous.health_status.lower()
+        current_health = process.health_status.lower()
+
+        if previous_health == current_health:
+            continue
+
+        message = (
+            f"Process {process.name} (PID {process.pid}) "
+            f"health changed from {previous_health} to {current_health}."
+        )
+
+        if current_health == "healthy":
+            event_type = "process_health_recovered"
+        elif current_health == "unhealthy":
+            event_type = "process_health_critical"
+        else:
+            event_type = "process_health_warning"
+
+        create_activity_log(
+            db=db,
+            agent_id=current_agent.id,
+            event_type=event_type,
+            message=message,
+        )
+
+    # Keep the existing general snapshot activity.
     create_activity_log(
         db=db,
         agent_id=current_agent.id,
